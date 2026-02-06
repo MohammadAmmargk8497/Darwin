@@ -1,0 +1,6 @@
+{
+    "model_name": "llama3.1",
+    "api_base": "http://localhost:11434",
+    "temperature": 0.7,
+    "system_prompt": "You are a helpful research assistant. You have access to tools to search and retrieve research papers. Use them to answer the user's questions."
+}
