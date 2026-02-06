@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "obsidian": {
+            "command": "obsidian-mcp-server",
+            "env": {
+                "OBSIDIAN_API_KEY": "0170de35e4d8d2688c8f791ea86ed5c7264b3bf085de98ecc8480f608621e923",
+                "OBSIDIAN_PORT": "27124",
+                "DEFAULT_FOLDER": "Research/Incoming"
+            }
+        }
+    }
+}
