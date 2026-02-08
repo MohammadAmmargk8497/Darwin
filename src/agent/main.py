@@ -88,21 +88,32 @@ async def run_agent():
                         args = fn.get("arguments")
                         
                         print(f"{YELLOW}Executing tool: {name}...{RESET}")
+                        print(f"{YELLOW}Args: {args}{RESET}")
                         
                         # Execute
                         result = await mcp_client.call_tool(name, args)
                         
+                        # Extract content from result if it's an MCP CallToolResult
+                        # (Simulated check, actual types depend on mcp lib version imported)
+                        content_str = str(result)
+                        if hasattr(result, 'content') and isinstance(result.content, list):
+                            text_parts = []
+                            for item in result.content:
+                                if hasattr(item, 'text'):
+                                    text_parts.append(item.text)
+                                elif isinstance(item, dict) and 'text' in item:
+                                    text_parts.append(item['text'])
+                            if text_parts:
+                                content_str = "\n".join(text_parts)
+
                         # Feed back result
-                        # Role is usually 'tool'
                         tool_result_message = {
                             "role": "tool",
-                            "content": str(result),
+                            "content": content_str,
                             "name": name 
-                            # 'tool_call_id' might be needed depending on the model/api spec, 
-                            # Ollama usually just needs role tool? depends on OpenAI compatibility layer.
                         }
                         messages.append(tool_result_message)
-                        print(f"{YELLOW}Tool result received.{RESET}")
+                        print(f"{YELLOW}Tool result: {content_str[:200]}...{RESET}")
                     
                     # Do not break loop, go back to top to let LLM process result
                     
