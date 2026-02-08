@@ -24,12 +24,15 @@ def search_papers(query: str, max_results: int = 5) -> list:
     client = arxiv.Client()
     search = arxiv.Search(
         query=query,
-        max_results=max_results,
-        sort_by=arxiv.SortCriterion.SubmittedDate
+        max_results=int(max_results),
+        sort_by=arxiv.SortCriterion.Relevance
     )
     
     results = []
+    print(f"DEBUG: Search query: '{query}'")
     for r in client.results(search):
+        # Debug printing
+        print(f"DEBUG: Found paper: {r.title} ({r.get_short_id()})")
         results.append({
             "id": r.get_short_id(),
             "title": r.title,
@@ -37,6 +40,7 @@ def search_papers(query: str, max_results: int = 5) -> list:
             "summary": r.summary.replace("\n", " "),
             "pdf_url": r.pdf_url
         })
+    print(f"DEBUG: Returning {len(results)} results")
     return results
 
 @mcp.tool()
@@ -57,7 +61,9 @@ def download_paper(paper_id: str) -> str:
     
     # Download
     path = paper.download_pdf(dirpath=PAPER_STORAGE, filename=f"{paper_id}.pdf")
-    return path
+    abs_path = os.path.abspath(path)
+    print(f"DEBUG: Downloaded to {abs_path}")
+    return abs_path
 
 @mcp.tool()
 def list_papers() -> list:

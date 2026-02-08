@@ -11,7 +11,7 @@ def extract_pdf_sections(pdf_path: str) -> dict:
         text = ""
         for page in doc:
             text += page.get_text()
-        return {"full_text": text[:500] + "..."} # Truncated for skeleton
+        return {"full_text": text} # Return full text for analysis
     except Exception as e:
         return {"error": str(e)}
 
