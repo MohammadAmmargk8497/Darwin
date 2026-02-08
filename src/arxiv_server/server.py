@@ -6,6 +6,10 @@ import sys
 import sqlite3
 import pymupdf  # fitz
 from datetime import datetime
+import loguru as logger
+
+logger.add("file_{time}.log")
+
 
 mcp = FastMCP("ArXiv")
 
@@ -20,7 +24,7 @@ def search_papers(query: str, max_results: int = 5) -> list:
         query: Search query (e.g., "transformer architecture")
         max_results: Max number of results (default 5)
     """
-    print(f"Searching for {query}...")
+    logger.info(f"Searching for {query}...")
     client = arxiv.Client()
     search = arxiv.Search(
         query=query,
@@ -29,10 +33,10 @@ def search_papers(query: str, max_results: int = 5) -> list:
     )
     
     results = []
-    print(f"DEBUG: Search query: '{query}'")
+    logger.info(f"Search query: '{query}'")
     for r in client.results(search):
         # Debug printing
-        print(f"DEBUG: Found paper: {r.title} ({r.get_short_id()})")
+        logger.info(f"Found paper: {r.title} ({r.get_short_id()})")
         results.append({
             "id": r.get_short_id(),
             "title": r.title,
@@ -40,7 +44,7 @@ def search_papers(query: str, max_results: int = 5) -> list:
             "summary": r.summary.replace("\n", " "),
             "pdf_url": r.pdf_url
         })
-    print(f"DEBUG: Returning {len(results)} results")
+    logger.info(f"Returning {len(results)} results")
     return results
 
 @mcp.tool()
@@ -49,7 +53,7 @@ def download_paper(paper_id: str) -> str:
     Download a paper by its ArXiv ID (e.g., "2401.12345").
     Returns the file path.
     """
-    print(f"Downloading {paper_id}...")
+    logger.info(f"Downloading {paper_id}...")
     
     # Check if already exists
     for filename in os.listdir(PAPER_STORAGE):
@@ -62,7 +66,7 @@ def download_paper(paper_id: str) -> str:
     # Download
     path = paper.download_pdf(dirpath=PAPER_STORAGE, filename=f"{paper_id}.pdf")
     abs_path = os.path.abspath(path)
-    print(f"DEBUG: Downloaded to {abs_path}")
+    logger.info(f"Downloaded to {abs_path}")
     return abs_path
 
 @mcp.tool()
@@ -95,7 +99,7 @@ def read_paper(paper_id: str) -> str:
 @mcp.tool()
 def confirm_download(paper_title: str, abstract: str) -> bool:
     """Ask user before downloading paper (Human-in-the-Loop)."""
-    print(f"Requesting confirmation to download: {paper_title}")
+    logger.info(f"Requesting confirmation to download: {paper_title}")
     return True
 
 @mcp.tool()
@@ -108,12 +112,14 @@ def log_research_action(action: str, paper_id: str, result: str):
             INSERT INTO actions (timestamp, action, paper_id, result)
             VALUES (?, ?, ?, ?)
         """, (datetime.now().isoformat(), action, paper_id, str(result)))
-    print(f"Logged action: {action}")
+    logger.info(f"Logged action: {action}")
 
 if __name__ == "__main__":
     try:
-        print("Starting ArXiv MCP Server...", file=sys.stderr)
+        logger.info("Starting ArXiv MCP Server...", file=sys.stderr)
         mcp.run()
+        logger.info("ArXiv MCP Server started successfully.")
+        
     except Exception as e:
-        print(f"Server crashed: {e}", file=sys.stderr)
+        logger.error(f"Server crashed: {e}", file=sys.stderr)
         raise
