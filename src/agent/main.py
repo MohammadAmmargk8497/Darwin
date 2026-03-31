@@ -194,11 +194,11 @@ async def run_agent():
                                         print(f"{GREEN}✓ Approved{RESET}")
                                         break
                                     elif user_decision in ["no", "n", "skip", "s"]:
-                                    response_msg = f"User rejected download"
-                                    print(f"{YELLOW}✗ Rejected{RESET}")
-                                    break
-                                else:
-                                    print(f"{YELLOW}Please enter 'yes', 'no', or 'skip'{RESET}")
+                                        response_msg = f"User rejected download"
+                                        print(f"{YELLOW}✗ Rejected{RESET}")
+                                        break
+                                    else:
+                                        print(f"{YELLOW}Please enter 'yes', 'no', or 'skip'{RESET}")
                             
                             tool_result_message = {
                                 "role": "tool",
