@@ -136,7 +136,14 @@ async def run_agent():
                         # HUMAN-IN-THE-LOOP ENFORCEMENT: Block downloads without approval
                         if name == "download_paper":
                             paper_id = args.get("paper_id")
-                            if paper_id not in approved_papers:
+                            
+                            # Allow download if:
+                            # 1. User said auto-download/without approval
+                            # 2. Paper already approved
+                            if skip_approval or paper_id in approved_papers:
+                                # Approved - allow download
+                                pass
+                            else:
                                 # Paper not approved - this shouldn't happen with proper workflow
                                 # but we block it anyway as safety net
                                 print(f"{YELLOW}⚠️  Safety Gate: Paper {paper_id} attempted download without approval!{RESET}")
