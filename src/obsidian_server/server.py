@@ -86,7 +86,7 @@ def obsidian_read_note(note_path: str) -> str:
 @mcp.tool()
 def obsidian_create_note(title: str, content: str, tags: list = None) -> dict:
     """
-    Create a new note in Obsidian with frontmatter.
+    Create a new note in Obsidian with frontmatter and structured sections.
     Args:
         title: Title of the note
         content: Main content in markdown
@@ -101,23 +101,40 @@ def obsidian_create_note(title: str, content: str, tags: list = None) -> dict:
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
     note_path = f"{DEFAULT_FOLDER}/{safe_title}"
     
-    # Build frontmatter
-    frontmatter = {
-        "title": title,
-        "created": datetime.now().isoformat(),
-        "tags": tags,
-        "type": "research-paper"
-    }
-    
-    # Format note with YAML frontmatter
+    # Build comprehensive note with structured sections
     note_content = f"""---
 title: {title}
 created: {datetime.now().isoformat()}
 tags: {json.dumps(tags)}
-type: research-paper
+type: research-note
 ---
 
+# {title}
+
+## Overview
 {content}
+
+## Key Points
+- Main point 1
+- Main point 2
+- Main point 3
+
+## Analysis & Insights
+Add detailed analysis here based on the research.
+
+## Related Topics
+- Link related notes here
+
+## References & Sources
+- Add citations and sources
+
+## Action Items
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+
+## Last Updated
+{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
     
     # Write to vault
