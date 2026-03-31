@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Research/Incoming/Federated Learning.md",
+                "file": "Research/Incoming/Data Quality Challenges in Machine Learning.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Federated Learning"
+              "title": "Data Quality Challenges in Machine Learning"
             }
           }
         ]
@@ -182,9 +182,11 @@
   },
   "active": "26071db38e50ad0f",
   "lastOpenFiles": [
+    "Research/Incoming/Machine Learning Trends.md",
     "Research/Incoming/Research Note - Test.md",
-    "Research/Incoming/2602.12375v1.md",
+    "Research/Incoming/Data Quality Challenges in Machine Learning.md",
     "Research/Incoming/Federated Learning.md",
+    "Research/Incoming/2602.12375v1.md",
     "Welcome.md",
     "Research/Incoming",
     "Research"
