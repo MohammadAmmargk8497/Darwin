@@ -1,12 +1,13 @@
 import streamlit as st
 import subprocess
-import threading
 import time
+import json
+import re
 from pathlib import Path
 
 # Page configuration
 st.set_page_config(
-    page_title="Darwin Research Agent - Live Chat",
+    page_title="Darwin Research Agent",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -14,10 +15,20 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .agent-message { background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #1976d2; }
-    .user-message { background-color: #f3e5f5; padding: 10px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #7b1fa2; text-align: right; }
-    .tool-execution { background-color: #fff3e0; padding: 10px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #f57c00; font-family: monospace; font-size: 0.9em; }
-    .thinking { background-color: #f0f4c3; padding: 10px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #9ccc65; font-style: italic; }
+    .paper-card { 
+        background-color: #f0f4f8; 
+        padding: 15px; 
+        border-radius: 8px; 
+        margin: 10px 0; 
+        border-left: 4px solid #1976d2;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .paper-id { font-family: monospace; color: #666; font-size: 0.9em; }
+    .paper-title { font-size: 1.1em; font-weight: bold; color: #1976d2; margin: 5px 0; }
+    .paper-summary { color: #333; line-height: 1.5; margin: 10px 0; }
+    .agent-message { background-color: #e8f5e9; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #4caf50; }
+    .user-message { background-color: #f3e5f5; padding: 12px; border-radius: 5px; margin: 5px 0; text-align: right; }
+    .tool-message { background-color: #fff3e0; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #ff9800; font-family: monospace; font-size: 0.9em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -28,6 +39,8 @@ if "agent_process" not in st.session_state:
     st.session_state.agent_process = None
 if "agent_ready" not in st.session_state:
     st.session_state.agent_ready = False
+if "current_papers" not in st.session_state:
+    st.session_state.current_papers = []
 
 def start_agent():
     """Start the agent wrapper as a subprocess"""
@@ -43,7 +56,6 @@ def start_agent():
         )
         
         # Wait for agent to be ready
-        import time
         for _ in range(30):
             line = process.stdout.readline()
             if "AGENT_READY" in line:
@@ -58,12 +70,29 @@ def start_agent():
         st.error(f"Failed to start agent: {str(e)}")
         return False
 
+def extract_papers_from_response(text):
+    """Extract paper data from agent response"""
+    papers = []
+    
+    # Look for JSON-like structures in the response
+    json_pattern = r'\{\s*"id":\s*"([^"]+)".*?"title":\s*"([^"]+)".*?"summary":\s*"([^"]+)".*?\}'
+    matches = re.findall(json_pattern, text, re.DOTALL)
+    
+    for match in matches:
+        papers.append({
+            "id": match[0],
+            "title": match[1][:100] + "..." if len(match[1]) > 100 else match[1],
+            "summary": match[2][:200] + "..." if len(match[2]) > 200 else match[2]
+        })
+    
+    return papers
+
 def send_command_to_agent(command):
     """Send a command to the agent and get the response"""
     try:
         process = st.session_state.agent_process
         if not process or process.poll() is not None:
-            return "Error: Agent process not running"
+            return "Error: Agent process not running", []
         
         # Send command
         process.stdin.write(command + "\n")
@@ -71,7 +100,7 @@ def send_command_to_agent(command):
         
         # Read response
         response_lines = []
-        import time
+        papers = []
         timeout = 60
         start_time = time.time()
         
@@ -88,57 +117,39 @@ def send_command_to_agent(command):
             if line.startswith("AGENT_RESPONSE:"):
                 content = line.replace("AGENT_RESPONSE:", "", 1)
                 response_lines.append(("agent", content))
+                # Try to extract papers from this response
+                extracted = extract_papers_from_response(content)
+                if extracted:
+                    papers.extend(extracted)
             elif line.startswith("TOOL_EXECUTE:"):
                 content = line.replace("TOOL_EXECUTE:", "", 1)
                 response_lines.append(("tool", f"🔧 Executing: {content}"))
             elif line.startswith("TOOL_ERROR:"):
                 content = line.replace("TOOL_ERROR:", "", 1)
-                response_lines.append(("error", f"✗ {content}"))
-            elif line.startswith("TOOL_AUTO_APPROVE"):
-                response_lines.append(("tool", "⚡ Auto-approved (no user prompt)"))
-            elif line.startswith("TOOL_USER_APPROVED"):
-                response_lines.append(("tool", "✓ User approved"))
-            elif line.startswith("TOOL_USER_REJECTED"):
-                response_lines.append(("tool", "✗ User rejected"))
-            elif line.startswith("TOOL_BLOCKED:"):
-                content = line.replace("TOOL_BLOCKED:", "", 1)
-                response_lines.append(("tool", f"🔒 Blocked: {content}"))
+                response_lines.append(("error", f"✗ Error: {content}"))
             elif line.startswith("ERROR:"):
                 content = line.replace("ERROR:", "", 1)
                 response_lines.append(("error", f"Error: {content}"))
                 break
             elif line.startswith("AGENT_EXIT"):
                 break
-            else:
-                # Unknown line - just add it
-                if line:
-                    response_lines.append(("agent", line))
+            elif line and not line.startswith("TOOL"):
+                response_lines.append(("agent", line))
         
         # Format response
-        if not response_lines:
-            return "No response from agent"
-        
-        # Combine into single response
         final_response = ""
-        has_agent_response = False
-        
         for role, content in response_lines:
-            if role == "agent":
+            if content.strip():
                 final_response += content + "\n"
-                has_agent_response = True
-            elif role == "tool":
-                final_response += content + "\n"
-            elif role == "error":
-                final_response += f"⚠️ {content}\n"
         
-        return final_response.strip() if final_response.strip() else "Processing..."
+        return final_response.strip() if final_response.strip() else "Processing...", papers
     
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error: {str(e)}", []
 
 # Header
-st.markdown("# 🧬 Darwin Research Agent - Live Terminal")
-st.markdown("💬 **Running agent.py directly in browser**")
+st.markdown("# 🧬 Darwin Research Agent")
+st.markdown("**Web frontend for your research agent**")
 
 # Sidebar
 with st.sidebar:
@@ -165,11 +176,11 @@ with st.sidebar:
     st.write("**Quick Commands:**")
     
     quick_commands = [
-        ("Search Papers", "search papers on machine learning"),
-        ("List Papers", "list papers"),
-        ("Download Paper", "download paper 2306.04338v1"),
-        ("Read Paper", "read paper 2306.04338v1"),
-        ("Create Note", "create a research note about AI for my Obsidian vault"),
+        ("🔍 Search Papers", "search papers on machine learning"),
+        ("📋 List Papers", "list papers"),
+        ("📥 Download Paper", "download paper 2306.04338v1"),
+        ("📖 Read Paper", "read paper 2306.04338v1"),
+        ("📝 Create Note", "create a research note about deep learning for Obsidian"),
     ]
     
     for label, cmd in quick_commands:
@@ -178,7 +189,7 @@ with st.sidebar:
     
     st.divider()
     
-    with st.expander("📋 Downloads"):
+    with st.expander("📋 Downloaded Papers"):
         papers_path = Path("papers")
         if papers_path.exists():
             papers = list(papers_path.glob("*.pdf"))
@@ -186,8 +197,10 @@ with st.sidebar:
                 for p in papers:
                     st.text(f"📄 {p.name}")
                 st.caption(f"Total: {len(papers)}")
+            else:
+                st.caption("No papers downloaded yet")
     
-    with st.expander("📚 Notes"):
+    with st.expander("📚 Obsidian Notes"):
         notes_path = Path("Darwin Research/Research/Incoming")
         if notes_path.exists():
             notes = list(notes_path.glob("*.md"))
@@ -195,29 +208,33 @@ with st.sidebar:
                 for n in notes:
                     st.text(f"📝 {n.name}")
                 st.caption(f"Total: {len(notes)}")
+            else:
+                st.caption("No notes created yet")
 
 # Main chat area
 if not st.session_state.agent_ready:
-    st.info("👈 Click 'Start Agent' to begin")
+    st.info("👈 Click **'Start Agent'** in the sidebar to begin")
 else:
     # Display chat history
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
             st.markdown(f"<div class='user-message'><b>You:</b> {msg['content']}</div>", unsafe_allow_html=True)
-        elif msg["role"] == "assistant":
-            # Split response into lines and format each appropriately
-            lines = msg['content'].split('\n')
-            for line in lines:
-                if line.startswith("🔧"):
-                    st.markdown(f"<div class='tool-execution'>{line}</div>", unsafe_allow_html=True)
-                elif line.startswith("✓") or line.startswith("✗") or line.startswith("⚡") or line.startswith("🔒"):
-                    st.markdown(f"<div class='tool-execution'>{line}</div>", unsafe_allow_html=True)
-                elif line.startswith("⚠️"):
-                    st.warning(line)
-                elif line:
-                    st.markdown(f"<div class='agent-message'><b>Agent:</b> {line}</div>", unsafe_allow_html=True)
+        elif msg["role"] == "agent":
+            st.markdown(f"<div class='agent-message'>{msg['content']}</div>", unsafe_allow_html=True)
+            
+            # Display papers if this response had papers
+            if msg.get("papers"):
+                st.markdown("### 📄 Search Results:")
+                for paper in msg["papers"]:
+                    st.markdown(f"""
+                    <div class='paper-card'>
+                        <div class='paper-id'>ID: {paper['id']}</div>
+                        <div class='paper-title'>{paper['title']}</div>
+                        <div class='paper-summary'>{paper['summary']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
         elif msg["role"] == "error":
-            st.error(f"Error: {msg['content']}")
+            st.error(msg['content'])
     
     st.divider()
     
@@ -232,7 +249,7 @@ else:
             should_send = True
         else:
             user_input = st.text_input(
-                "Type your command (or use quick commands →)",
+                "Type your command:",
                 placeholder="search papers on..., download paper..., read paper..., list papers, create note...",
                 key="user_input"
             )
@@ -247,10 +264,14 @@ else:
         
         # Send command and get response
         with st.spinner("Executing..."):
-            response = send_command_to_agent(user_input)
+            response, papers = send_command_to_agent(user_input)
             
-            # Add response to history
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            # Add response to history with papers
+            st.session_state.chat_history.append({
+                "role": "agent",
+                "content": response,
+                "papers": papers
+            })
         
         st.rerun()
 
@@ -260,19 +281,19 @@ st.markdown("""
 ### 📖 Available Commands
 
 **Search & Browse:**
-- `search papers on machine learning`
-- `list papers`
+- `search papers on machine learning` - Find papers on a topic
+- `list papers` - Show downloaded papers
 
 **Download & Read:**
-- `download paper 2306.04338v1`
-- `download paper 2306.04338v1 without approval`
-- `read paper 2306.04338v1`
+- `download paper 2306.04338v1` - Download by ID
+- `download paper 2306.04338v1 without approval` - Auto-download
+- `read paper 2306.04338v1` - Extract and read paper text
 
 **Create Notes:**
-- `create a research note about AI for my Obsidian vault`
-- `create a research note for paper 2306.04338v1 about data quality for Obsidian`
+- `create a research note about AI for Obsidian`
+- `create a research note for paper 2306.04338v1 about deep learning for Obsidian`
 
 ---
-**🟢 Direct Terminal Integration** - Runs the same agent.py that works in terminal!
+**🟢 Direct Agent Integration** - Same agent as terminal, now in your browser!
 """)
 st.markdown("**Darwin Research Agent** | Powered by ArXiv, Ollama, and MCP | Built with Streamlit")
