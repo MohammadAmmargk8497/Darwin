@@ -3,24 +3,28 @@
         "arxiv": {
             "command": "python",
             "args": [
-                "${PROJECT_ROOT}/src/arxiv_server/server.py"
+                "C:/Users/ADMIN/Darwin/src/arxiv_server/server.py"
             ],
             "env": {
-                "PAPER_STORAGE": "~/papers"
+                "PAPER_STORAGE": "C:/Users/ADMIN/Darwin/papers"
             }
         },
         "pdf_tools": {
             "command": "python",
             "args": [
-                "${PROJECT_ROOT}/src/pdf_parser/server.py"
+                "C:/Users/ADMIN/Darwin/src/pdf_parser/server.py"
             ]
         },
         "obsidian": {
-            "command": "/Users/ammar/.nvm/versions/node/v25.6.0/bin/obsidian-mcp-server",
+            "command": "python",
+            "args": [
+                "C:/Users/ADMIN/Darwin/src/obsidian_server/server.py"
+            ],
             "env": {
-                "OBSIDIAN_API_KEY": "0170de35e4d8d2688c8f791ea86ed5c7264b3bf085de98ecc8480f608621e923",
+                "OBSIDIAN_API_KEY": "aa910b265c71eea1ef50ac65eec6b7bbb77aec3e0b462dc68cbe4559675ec769",
                 "OBSIDIAN_PORT": "27123",
-                "PATH": "/Users/ammar/.nvm/versions/node/v25.6.0/bin:$PATH"
+                "DEFAULT_FOLDER": "Research/Incoming",
+                "OBSIDIAN_VAULT_PATH": "C:/Users/ADMIN/Darwin/Darwin Research"
             }
         }
     }
