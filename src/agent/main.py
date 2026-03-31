@@ -94,6 +94,9 @@ async def run_agent():
                 if user_input.lower() in ["exit", "quit"]:
                     break
                 
+                # Check if user wants to skip approval
+                skip_approval = "without approval" in user_input.lower() or "auto-download" in user_input.lower() or "auto download" in user_input.lower()
+                
                 messages.append({"role": "user", "content": user_input})
                 
                 # --- Turn Loop (Handle Tool Calls) ---
@@ -162,19 +165,28 @@ async def run_agent():
                             
                             print(f"{YELLOW}Executing tool: {name}...{RESET}")
                             print(f"{YELLOW}Args: {args}{RESET}")
-                            print(f"\n{BLUE}Confirmation Required:{RESET}")
-                            print(content_str)
                             
-                            # Get user decision
-                            while True:
-                                user_decision = input(f"\n{GREEN}Approve? (yes/no/skip): {RESET}").strip().lower()
-                                if user_decision in ["yes", "y"]:
-                                    paper_id = args.get("paper_id")
-                                    approved_papers.add(paper_id)
-                                    response_msg = f"User approved download of paper {paper_id}"
-                                    print(f"{GREEN}✓ Approved{RESET}")
-                                    break
-                                elif user_decision in ["no", "n", "skip", "s"]:
+                            # Check if approval is skipped
+                            if skip_approval:
+                                print(f"{YELLOW}⏭️  Auto-approval mode: Skipping confirmation{RESET}")
+                                paper_id = args.get("paper_id")
+                                approved_papers.add(paper_id)
+                                response_msg = f"Auto-approved download of paper {paper_id}"
+                                print(f"{GREEN}✓ Auto-Approved{RESET}")
+                            else:
+                                print(f"\n{BLUE}Confirmation Required:{RESET}")
+                                print(content_str)
+                                
+                                # Get user decision
+                                while True:
+                                    user_decision = input(f"\n{GREEN}Approve? (yes/no/skip): {RESET}").strip().lower()
+                                    if user_decision in ["yes", "y"]:
+                                        paper_id = args.get("paper_id")
+                                        approved_papers.add(paper_id)
+                                        response_msg = f"User approved download of paper {paper_id}"
+                                        print(f"{GREEN}✓ Approved{RESET}")
+                                        break
+                                    elif user_decision in ["no", "n", "skip", "s"]:
                                     response_msg = f"User rejected download"
                                     print(f"{YELLOW}✗ Rejected{RESET}")
                                     break
