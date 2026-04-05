@@ -45,6 +45,7 @@ if "current_papers" not in st.session_state:
 def start_agent():
     """Start the agent wrapper as a subprocess"""
     try:
+        cwd = str(Path(__file__).parent)
         process = subprocess.Popen(
             ["python", "agent_wrapper.py"],
             stdin=subprocess.PIPE,
@@ -52,11 +53,11 @@ def start_agent():
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            cwd="c:\\Users\\ADMIN\\Darwin"
+            cwd=cwd
         )
-        
-        # Wait for agent to be ready
-        for _ in range(30):
+
+        # Wait for agent to be ready (MCP servers may take a few seconds to start)
+        for _ in range(80):
             line = process.stdout.readline()
             if "AGENT_READY" in line:
                 st.session_state.agent_process = process
@@ -101,7 +102,7 @@ def send_command_to_agent(command):
         # Read response
         response_lines = []
         papers = []
-        timeout = 60
+        timeout = 180
         start_time = time.time()
         
         while time.time() - start_time < timeout:
@@ -127,14 +128,22 @@ def send_command_to_agent(command):
             elif line.startswith("TOOL_ERROR:"):
                 content = line.replace("TOOL_ERROR:", "", 1)
                 response_lines.append(("error", f"✗ Error: {content}"))
+            elif line.startswith("TOOL_CONFIRM:"):
+                # Auto-approve downloads from UI — send "yes" back to unblock agent
+                process.stdin.write("yes\n")
+                process.stdin.flush()
+                response_lines.append(("tool", "✓ Download approved"))
+            elif line.startswith("TOOL_BLOCKED:"):
+                content = line.replace("TOOL_BLOCKED:", "", 1)
+                response_lines.append(("tool", f"⚠ Blocked: {content}"))
             elif line.startswith("ERROR:"):
                 content = line.replace("ERROR:", "", 1)
                 response_lines.append(("error", f"Error: {content}"))
                 break
+            elif line.startswith("AGENT_END"):
+                break  # Agent finished processing this command
             elif line.startswith("AGENT_EXIT"):
                 break
-            elif line and not line.startswith("TOOL"):
-                response_lines.append(("agent", line))
         
         # Format response
         final_response = ""
