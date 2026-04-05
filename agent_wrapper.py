@@ -68,10 +68,9 @@ async def main():
     approved_papers = set()
 
     # Connect to MCP
-    print("AGENT_READY", flush=True)  # Signal to wrapper that we're ready
-    
     await mcp_client.connect()
     tools = await mcp_client.list_tools()
+    print("AGENT_READY", flush=True)  # Signal to UI that we're ready
 
     # Chat loop
     messages = []
@@ -86,13 +85,26 @@ async def main():
                 print("AGENT_EXIT", flush=True)
                 break
             
-            skip_approval = "without approval" in user_input.lower() or "auto-download" in user_input.lower()
+            import re as _re
+            skip_approval = (
+                "without approval" in user_input.lower() or
+                "auto-download" in user_input.lower() or
+                bool(_re.match(r'^download\s+(paper\s+)?[\w.]+$', user_input.strip(), _re.IGNORECASE))
+            )
             messages.append({"role": "user", "content": user_input})
 
             # Agent turn loop
             while True:
-                response = ollama.chat(messages, tools=tools)
-                
+                # Retry on transient CUDA/Ollama 500 errors (model reload takes ~15s)
+                import time as _time
+                for attempt in range(3):
+                    response = ollama.chat(messages, tools=tools)
+                    if "error" not in response:
+                        break
+                    if attempt < 2:
+                        print(f"TOOL_EXECUTE:retrying after Ollama error (attempt {attempt+1})", flush=True)
+                        _time.sleep(20)
+
                 if "error" in response:
                     print(f"ERROR: {response['error']}", flush=True)
                     break
@@ -169,7 +181,21 @@ async def main():
                             result = await mcp_client.call_tool(name, args)
                             result_str = str(result)
                             print(f"TOOL_EXECUTE:{name}:{result_str[:100]}", flush=True)
-                            
+
+                            # For search results, print all papers directly so UI shows them all
+                            if name == "search_papers":
+                                import json as _json
+                                try:
+                                    # Extract text from MCP TextContent result
+                                    raw = result.content[0].text if hasattr(result, 'content') else result_str
+                                    papers = _json.loads(raw)
+                                    print(f"AGENT_RESPONSE:Found {len(papers)} papers:", flush=True)
+                                    for i, p in enumerate(papers, 1):
+                                        print(f"AGENT_RESPONSE:{i}. [{p['id']}] {p['title']} ({p.get('published','')})", flush=True)
+                                        print(f"AGENT_RESPONSE:   {p.get('summary','')[:150]}...", flush=True)
+                                except Exception:
+                                    pass  # Fall through to let LLM summarize
+
                             tool_result = {
                                 "role": "tool",
                                 "content": result_str,
@@ -184,7 +210,9 @@ async def main():
                                 "name": name
                             })
                             print(f"TOOL_ERROR:{name}:{error_str}", flush=True)
-        
+
+            print("AGENT_END", flush=True)  # Signal UI that this command is fully done
+
         except KeyboardInterrupt:
             break
         except Exception as e:
