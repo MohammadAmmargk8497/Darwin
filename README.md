@@ -6,6 +6,12 @@ The agent is built around a tool-calling loop where the LLM reasons over a growi
 
 ---
 
+## Architecture
+
+![Darwin System Architecture](archi.png)
+
+---
+
 ## How it works
 
 The agent runs a reasoning loop: the LLM decides at each step whether to call a tool or return a final answer. Tool results are injected back into the message history so the model has full context across every step.
@@ -21,6 +27,18 @@ User prompt
 ```
 
 All tool communication happens over stdio using the MCP protocol. The LLM never calls external APIs directly.
+
+---
+
+## Methodology
+
+The core idea is that instead of scripting a fixed research workflow, we let the LLM figure out the steps. The agent gets a list of available tools and a system prompt, and from there it decides what to call, in what order, and when it's done. This means it can handle "search and download the first paper" just as well as "find three papers on federated learning, read them, and save notes for each" — the same loop handles both.
+
+Search is the most engineered part. Rather than passing the user's query directly to arXiv, we rewrite it into a structured Lucene query scoped to title and abstract fields, run two passes (relevance-sorted and date-sorted), merge the results, and fall back to a broadened OR query if nothing comes back. This consistently outperforms raw keyword search on precision.
+
+PDF extraction works by scanning the full document for section headers using regex, then slicing the text between them. This gives the LLM actual methods and results sections to work with rather than just the abstract — which is what ends up in the Obsidian note.
+
+The Streamlit frontend communicates with the agent over subprocess stdio, reading structured prefixes (`AGENT_RESPONSE:`, `PAPER_CARD:`, `TOOL_EXECUTE:`) to decide how to render each piece of output. Search results come back as individual JSON objects and render as interactive cards rather than raw text.
 
 ---
 
