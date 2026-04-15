@@ -144,7 +144,11 @@ async def main():
                 tool_calls = message.get("tool_calls", [])
 
                 if content:
-                    print(f"AGENT_RESPONSE:{content}", flush=True)
+                    # Prefix every line so the UI's readline() loop captures all of them.
+                    # A bare print(f"AGENT_RESPONSE:{content}") drops everything after
+                    # the first newline because the UI reads one line at a time.
+                    for line in content.splitlines():
+                        print(f"AGENT_RESPONSE:{line}", flush=True)
 
                 if not tool_calls:
                     # No tool calls — content is the final response for this turn
