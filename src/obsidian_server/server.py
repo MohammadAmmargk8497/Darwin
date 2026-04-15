@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime
 import logging
+import arxiv
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,24 +44,24 @@ def write_note_to_vault(note_path: str, content: str) -> tuple[bool, str]:
     Args:
         note_path: Relative path from vault root (e.g., "Research/Incoming/MyNote")
         content: Full markdown content with frontmatter
-    
+
     Returns:
         (success: bool, message: str)
     """
     if not OBSIDIAN_VAULT_PATH:
         return False, "Obsidian vault path not configured. Set OBSIDIAN_VAULT_PATH environment variable."
-    
+
     try:
         # Build full file path
         full_path = os.path.join(OBSIDIAN_VAULT_PATH, f"{note_path}.md")
-        
+
         # Create directories if they don't exist
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        
+
         # Write the file
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        
+
         logging.info(f"Note written to: {full_path}")
         return True, full_path
     except Exception as e:
@@ -98,12 +99,12 @@ def obsidian_create_note(title: str, content: str = "", tags: list = None) -> di
         content = f"Research note about {title}."
     if tags is None:
         tags = []
-    
+
     # Auto-generate safe filename from title
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
     note_path = f"{DEFAULT_FOLDER}/{safe_title}"
-    
-    # Build note with actual content — no hardcoded placeholders
+
+    # Build note with actual content
     note_content = f"""---
 title: {title}
 created: {datetime.now().isoformat()}
@@ -119,10 +120,10 @@ type: research-note
 ## Last Updated
 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
-    
+
     # Write to vault
     success, message = write_note_to_vault(note_path, note_content)
-    
+
     return {
         "title": title,
         "status": "created" if success else "failed",
@@ -142,7 +143,7 @@ def obsidian_update_note(note_path: str, append_content: str) -> dict:
         append_content: Content to append
     """
     logging.info(f"Updating note: {note_path}")
-    
+
     return {
         "path": note_path,
         "status": "updated",
@@ -159,13 +160,13 @@ def obsidian_manage_frontmatter(note_path: str, tags: list = None, properties: d
         properties: Dictionary of custom properties
     """
     logging.info(f"Updating frontmatter for: {note_path}")
-    
+
     frontmatter_update = {}
     if tags:
         frontmatter_update["tags"] = tags
     if properties:
         frontmatter_update.update(properties)
-    
+
     return {
         "path": note_path,
         "status": "frontmatter_updated",
@@ -180,7 +181,7 @@ def obsidian_global_search(query: str) -> list:
         query: Search term
     """
     logging.info(f"Searching vault for: {query}")
-    
+
     # Mock search results
     return [
         {
@@ -200,27 +201,57 @@ def obsidian_create_paper_note(paper_id: str, title: str = "", authors: list = N
                                 methods: str = "", findings: str = "", keywords: list = None) -> dict:
     """
     Create a structured research paper note with standard sections.
+    Auto-fetches title, authors, and abstract from arXiv if not provided.
     Args:
         paper_id: ArXiv ID or unique identifier
-        title: Paper title (optional, defaults to paper_id)
-        authors: List of author names (optional)
-        abstract: Paper abstract (optional)
+        title: Paper title (optional, auto-fetched from arXiv)
+        authors: List of author names (optional, auto-fetched from arXiv)
+        abstract: Paper abstract (optional, auto-fetched from arXiv)
         methods: Methods section summary
         findings: Key findings summary
         keywords: Research keywords/topics
     """
     logging.info(f"Creating paper note for: {paper_id}")
 
-    if not title:
-        title = f"Paper {paper_id}"
     if authors is None:
         authors = []
     if keywords is None:
         keywords = []
-    
+
+    # Auto-fetch from arXiv if title/authors/abstract are missing
+    published_date = datetime.now().strftime("%Y-%m-%d")
+    arxiv_url = f"https://arxiv.org/abs/{paper_id.split('v')[0]}"
+    pdf_url = f"https://arxiv.org/pdf/{paper_id.split('v')[0]}"
+
+    if not title or not abstract or not authors:
+        logging.info(f"Auto-fetching metadata from arXiv for {paper_id}...")
+        try:
+            base_id = paper_id.split("v")[0]
+            arxiv_client = arxiv.Client()
+            search = arxiv.Search(id_list=[base_id])
+            for result in arxiv_client.results(search):
+                if not title:
+                    title = result.title
+                if not authors:
+                    authors = [a.name for a in result.authors]
+                if not abstract:
+                    abstract = result.summary.replace("\n", " ")
+                published_date = result.published.strftime("%Y-%m-%d")
+                arxiv_url = f"https://arxiv.org/abs/{base_id}"
+                pdf_url = result.pdf_url or pdf_url
+                if keywords is None or not keywords:
+                    keywords = list(result.categories) if result.categories else []
+                break
+            logging.info(f"Fetched: '{title}' by {len(authors)} authors")
+        except Exception as e:
+            logging.warning(f"Could not fetch from arXiv: {e}")
+
+    if not title:
+        title = f"Paper {paper_id}"
+
     # Build paper note using whatever content was extracted from the PDF
-    _methods_text  = methods.strip()  if methods  and methods.strip()  else "_Not extracted — run extract_pdf_sections first._"
-    _findings_text = findings.strip() if findings and findings.strip() else "_Not extracted — run extract_pdf_sections first._"
+    _methods_text  = methods.strip()  if methods  and methods.strip()  else "_Not extracted -- run extract_pdf_sections first._"
+    _findings_text = findings.strip() if findings and findings.strip() else "_Not extracted -- run extract_pdf_sections first._"
     _abstract_text = abstract.strip() if abstract and abstract.strip() else "_Not available._"
 
     content = f"""# {title}
@@ -228,8 +259,9 @@ def obsidian_create_paper_note(paper_id: str, title: str = "", authors: list = N
 ## Metadata
 - **Paper ID**: {paper_id}
 - **Authors**: {", ".join(authors)}
-- **ArXiv**: https://arxiv.org/abs/{paper_id}
-- **Date Added**: {datetime.now().strftime("%Y-%m-%d")}
+- **Published**: {published_date}
+- **arXiv**: [{arxiv_url}]({arxiv_url})
+- **PDF**: [{pdf_url}]({pdf_url})
 
 ## Abstract
 {_abstract_text}
@@ -239,20 +271,31 @@ def obsidian_create_paper_note(paper_id: str, title: str = "", authors: list = N
 
 ## Key Findings
 {_findings_text}
+
+## Related Work
+- Links to related papers will appear here
+
+## Personal Notes
+- Add your thoughts and insights here
+
+## Follow-up Questions
+- What aspects need deeper investigation?
 """
-    
+
     # Create note with frontmatter
     tags = ["research", "paper"] + keywords
-    
+
     # Use paper_id as filename
     note_path = f"{DEFAULT_FOLDER}/{paper_id}"
-    
+
     # Format note with YAML frontmatter
     note_content = f"""---
-title: {title}
+title: "{title}"
 paper_id: {paper_id}
 authors: {json.dumps(authors)}
-published: {datetime.now().strftime("%Y-%m-%d")}
+published: {published_date}
+arxiv_url: {arxiv_url}
+pdf_url: {pdf_url}
 tags: {json.dumps(tags)}
 type: research-paper
 status: inbox
@@ -260,10 +303,10 @@ status: inbox
 
 {content}
 """
-    
+
     # Write to vault
     success, message = write_note_to_vault(note_path, note_content)
-    
+
     return {
         "paper_id": paper_id,
         "title": title,
@@ -283,7 +326,7 @@ def obsidian_create_weekly_digest(papers: list) -> dict:
         papers: List of paper summaries (dict with id, title, key_findings)
     """
     logging.info(f"Creating weekly digest for {len(papers)} papers")
-    
+
     # Build digest content
     digest_content = f"""# Weekly Research Digest
 
@@ -294,17 +337,17 @@ This digest summarizes the key research findings from {len(papers)} papers.
 
 ## Papers Reviewed
 """
-    
+
     for i, paper in enumerate(papers, 1):
         digest_content += f"\n### {i}. {paper.get('title', 'Untitled')}\n"
         digest_content += f"- **ID**: {paper.get('id', 'N/A')}\n"
         digest_content += f"- **Key Findings**: {paper.get('key_findings', 'N/A')}\n"
         digest_content += f"- **Link**: [[{paper.get('id')}]]\n"
-    
+
     digest_content += f"\n## Themes & Patterns\n- Common methodologies across papers\n- Emerging research directions\n\n## Action Items\n- Follow-up research needed\n"
-    
+
     digest_path = f"{DEFAULT_FOLDER}/Digests/Weekly-{datetime.now().strftime('%Y-W%V')}"
-    
+
     return {
         "path": digest_path,
         "status": "created",
