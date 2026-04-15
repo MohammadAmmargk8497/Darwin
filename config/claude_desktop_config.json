@@ -1,27 +1,19 @@
 {
     "mcpServers": {
         "arxiv": {
-            "command": "python",
+            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
             "args": [
                 "${PROJECT_ROOT}/src/arxiv_server/server.py"
             ],
             "env": {
-                "PAPER_STORAGE": "~/papers"
+                "PAPER_STORAGE": "/Users/samanthajohn/darwin/Darwin/papers"
             }
         },
         "pdf_tools": {
-            "command": "python",
+            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
             "args": [
                 "${PROJECT_ROOT}/src/pdf_parser/server.py"
             ]
-        },
-        "obsidian": {
-            "command": "/Users/ammar/.nvm/versions/node/v25.6.0/bin/obsidian-mcp-server",
-            "env": {
-                "OBSIDIAN_API_KEY": "0170de35e4d8d2688c8f791ea86ed5c7264b3bf085de98ecc8480f608621e923",
-                "OBSIDIAN_PORT": "27123",
-                "PATH": "/Users/ammar/.nvm/versions/node/v25.6.0/bin:$PATH"
-            }
         }
     }
 }
