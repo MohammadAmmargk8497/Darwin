@@ -33,9 +33,11 @@ class MCPClient:
             env = os.environ.copy()
             env.update(server_config.get("env", {}))
             
-            # Allow ${PROJECT_ROOT} expansion
+            # Expand ${PROJECT_ROOT} in command, args, and env values
             project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+            command = command.replace("${PROJECT_ROOT}", project_root)
             args = [arg.replace("${PROJECT_ROOT}", project_root) for arg in args]
+            env = {k: v.replace("${PROJECT_ROOT}", project_root) for k, v in env.items()}
 
             server_params = StdioServerParameters(
                 command=command,
