@@ -9,7 +9,7 @@ from pathlib import Path
 # Page configuration
 st.set_page_config(
     page_title="Darwin Research Agent",
-    page_icon="🧬",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -179,18 +179,18 @@ def send_command_to_agent(command):
                     pass
             elif line.startswith("TOOL_EXECUTE:"):
                 content = line.replace("TOOL_EXECUTE:", "", 1)
-                response_lines.append(("tool", f"🔧 {content}"))
+                response_lines.append(("tool", content))
             elif line.startswith("TOOL_ERROR:"):
                 content = line.replace("TOOL_ERROR:", "", 1)
-                response_lines.append(("error", f"✗ Error: {content}"))
+                response_lines.append(("error", f"Error: {content}"))
             elif line.startswith("TOOL_CONFIRM:"):
                 # Auto-approve downloads from UI — send "yes" back to unblock agent
                 process.stdin.write("yes\n")
                 process.stdin.flush()
-                response_lines.append(("tool", "✓ Download approved"))
+                response_lines.append(("tool", "Download approved"))
             elif line.startswith("TOOL_BLOCKED:"):
                 content = line.replace("TOOL_BLOCKED:", "", 1)
-                response_lines.append(("tool", f"⚠ Blocked: {content}"))
+                response_lines.append(("tool", f"Blocked: {content}"))
             elif line.startswith("ERROR:"):
                 content = line.replace("ERROR:", "", 1)
                 response_lines.append(("error", f"Error: {content}"))
@@ -213,11 +213,11 @@ def send_command_to_agent(command):
         return f"Error: {str(e)}", []
 
 # Header
-st.markdown("# 🧬 Darwin Research Agent")
+st.markdown("# Darwin Research Agent")
 
 # Sidebar
 with st.sidebar:
-    st.title("⚙️ Agent Control")
+    st.title("Agent Control")
     
     if not st.session_state.agent_ready:
         if st.button("🔌 Start Agent", use_container_width=True):
@@ -226,9 +226,9 @@ with st.sidebar:
                     st.success("Agent started!")
                     st.rerun()
     else:
-        st.success("✅ Agent Running")
-        
-        if st.button("🛑 Stop Agent", use_container_width=True):
+        st.success("Agent Running")
+
+        if st.button("Stop Agent", use_container_width=True):
             if st.session_state.agent_process:
                 st.session_state.agent_process.terminate()
                 st.session_state.agent_ready = False
@@ -240,11 +240,11 @@ with st.sidebar:
     st.write("**Quick Commands:**")
     
     quick_commands = [
-        ("🔍 Search Papers", "search papers on machine learning"),
-        ("📋 List Papers", "list papers"),
-        ("📥 Download Paper", "download paper 2306.04338v1"),
-        ("📖 Read Paper", "read paper 2306.04338v1"),
-        ("📝 Create Note", "create a research note about deep learning for Obsidian"),
+        ("Search Papers", "search papers on machine learning"),
+        ("List Papers", "list papers"),
+        ("Download Paper", "download paper 2306.04338v1"),
+        ("Read Paper", "read paper 2306.04338v1"),
+        ("Create Note", "create a research note about deep learning for Obsidian"),
     ]
     
     for label, cmd in quick_commands:
@@ -253,24 +253,24 @@ with st.sidebar:
     
     st.divider()
     
-    with st.expander("📋 Downloaded Papers"):
+    with st.expander("Downloaded Papers"):
         papers_path = Path("papers")
         if papers_path.exists():
             papers = list(papers_path.glob("*.pdf"))
             if papers:
                 for p in papers:
-                    st.text(f"📄 {p.name}")
+                    st.text(p.name)
                 st.caption(f"Total: {len(papers)}")
             else:
                 st.caption("No papers downloaded yet")
-    
-    with st.expander("📚 Obsidian Notes"):
+
+    with st.expander("Obsidian Notes"):
         notes_path = Path("Darwin Research/Research/Incoming")
         if notes_path.exists():
             notes = list(notes_path.glob("*.md"))
             if notes:
                 for n in notes:
-                    st.text(f"📝 {n.name}")
+                    st.text(n.name)
                 st.caption(f"Total: {len(notes)}")
             else:
                 st.caption("No notes created yet")
@@ -281,7 +281,7 @@ if "input_key" not in st.session_state:
 
 # Main chat area
 if not st.session_state.agent_ready:
-    st.info("👈 Click **'Start Agent'** in the sidebar to begin")
+    st.info("Click **'Start Agent'** in the sidebar to begin")
 else:
     # ── Input at the top ──────────────────────────────────────────────────────
     col1, col2 = st.columns([5, 1])
@@ -299,7 +299,7 @@ else:
             )
             should_send = False
     with col2:
-        send_button = st.button("📤 Send", use_container_width=True)
+        send_button = st.button("Send", use_container_width=True)
 
     if (send_button or should_send) and user_input:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
@@ -334,7 +334,7 @@ else:
                     if intro:
                         st.markdown(intro)
 
-                    st.markdown(f"#### 📄 {len(msg['papers'])} Papers Found")
+                    st.markdown(f"#### {len(msg['papers'])} Papers Found")
                     for paper in msg["papers"]:
                         arxiv_url = paper.get("arxiv_url", "")
                         pdf_url   = paper.get("pdf_url", "")
@@ -369,7 +369,7 @@ else:
 # Footer
 st.divider()
 st.markdown("""
-### 📖 Available Commands
+### Available Commands
 
 **Search & Browse:**
 - `search papers on machine learning` - Find papers on a topic
@@ -383,8 +383,5 @@ st.markdown("""
 **Create Notes:**
 - `create a research note about AI for Obsidian`
 - `create a research note for paper 2306.04338v1 about deep learning for Obsidian`
-
----
-**🟢 Direct Agent Integration** - Same agent as terminal, now in your browser!
 """)
 st.markdown("**Darwin Research Agent** | Powered by ArXiv, Ollama, and MCP | Built with Streamlit")
