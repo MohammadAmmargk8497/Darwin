@@ -101,7 +101,7 @@ def obsidian_create_note(title: str, content: str, tags: list = None) -> dict:
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
     note_path = f"{DEFAULT_FOLDER}/{safe_title}"
     
-    # Build comprehensive note with structured sections
+    # Build note with actual content — no hardcoded placeholders
     note_content = f"""---
 title: {title}
 created: {datetime.now().isoformat()}
@@ -111,28 +111,9 @@ type: research-note
 
 # {title}
 
-## Overview
 {content}
 
-## Key Points
-- Main point 1
-- Main point 2
-- Main point 3
-
-## Analysis & Insights
-Add detailed analysis here based on the research.
-
-## Related Topics
-- Link related notes here
-
-## References & Sources
-- Add citations and sources
-
-## Action Items
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
-
+## References
 ## Last Updated
 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
@@ -231,31 +212,27 @@ def obsidian_create_paper_note(paper_id: str, title: str, authors: list, abstrac
     if keywords is None:
         keywords = []
     
-    # Build comprehensive paper note
+    # Build paper note using whatever content was extracted from the PDF
+    _methods_text  = methods.strip()  if methods  and methods.strip()  else "_Not extracted — run extract_pdf_sections first._"
+    _findings_text = findings.strip() if findings and findings.strip() else "_Not extracted — run extract_pdf_sections first._"
+    _abstract_text = abstract.strip() if abstract and abstract.strip() else "_Not available._"
+
     content = f"""# {title}
 
 ## Metadata
 - **Paper ID**: {paper_id}
 - **Authors**: {", ".join(authors)}
-- **Date Created**: {datetime.now().strftime("%Y-%m-%d")}
+- **ArXiv**: https://arxiv.org/abs/{paper_id}
+- **Date Added**: {datetime.now().strftime("%Y-%m-%d")}
 
 ## Abstract
-{abstract}
+{_abstract_text}
 
 ## Methods
-{methods if methods else "TBD"}
+{_methods_text}
 
 ## Key Findings
-{findings if findings else "TBD"}
-
-## Related Work
-- Links to related papers will appear here
-
-## Personal Notes
-- Add your thoughts and insights here
-
-## Follow-up Questions
-- What aspects need deeper investigation?
+{_findings_text}
 """
     
     # Create note with frontmatter
