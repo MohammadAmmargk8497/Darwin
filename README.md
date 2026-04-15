@@ -1,119 +1,158 @@
 # Darwin Research Agent
 
-A privacy-focused research agent that connects a local LLM (via Ollama) to external research tools using the **Model Context Protocol (MCP)** — no data leaves your machine.
+Darwin is an autonomous research agent that connects a local LLM to arXiv, a PDF parser, and Obsidian through MCP (Model Context Protocol). You give it a topic, it searches, downloads, reads, and saves structured notes — all locally.
 
 ---
 
-## Architecture
+## How it works
+
+The agent runs a reasoning loop: the LLM decides at each step whether to call a tool or return a final answer. Tool results are injected back into the message history so the model has full context across every step.
 
 ```
-Local LLM (Ollama)
-       ↓
-  MCP Client
-       ↓
-  ┌────────────────────────────────────────────┐
-  │  ArXiv Server    — search & download papers │
-  │  PDF Parser      — extract text & figures   │
-  │  Obsidian Server — manage notes & knowledge │
-  └────────────────────────────────────────────┘
+User prompt
+    └─> LLM (llama3.1 via Ollama)
+            ├─ tool call ─> MCP Client Router
+            │                   ├─> ArXiv Server   (search, download, read)
+            │                   ├─> PDF Parser     (section extraction)
+            │                   └─> Obsidian Server (create/search notes)
+            └─ final answer ─> Streamlit UI
 ```
+
+All tool communication happens over stdio using the MCP protocol. The LLM never calls external APIs directly.
 
 ---
 
-## Quick Start
+## Dependencies
 
-### 1. Install dependencies
+**System**
+- Python 3.10+
+- [Ollama](https://ollama.com) with `llama3.1` pulled
+
+**Python packages**
 
 ```bash
 poetry install
 ```
 
-### 2. Start Ollama
+Key packages: `fastmcp`, `ollama`, `arxiv`, `pymupdf`, `httpx`, `streamlit`, `loguru`
+
+**Optional providers** — if you want to run with a cloud LLM instead of Ollama, set `DARWIN_CONFIG` to point at one of the alternate config files:
+
+| Config | Provider |
+|---|---|
+| `config/agent_config.json` | Ollama (default) |
+| `config/agent_config_groq.json` | Groq |
+| `config/agent_config_openai.json` | OpenAI |
+
+---
+
+## Setup
+
+**1. Clone and install**
+
+```bash
+git clone <repo>
+cd Darwin
+poetry install
+```
+
+**2. Start Ollama**
 
 ```bash
 ollama serve
 ollama pull llama3.1
 ```
 
-### 3. Configure
+**3. Configure Obsidian vault path**
 
-Edit the files in `config/`:
+Edit `config/claude_desktop_config.json` and set `OBSIDIAN_VAULT_PATH` to your vault directory:
 
-| File | Purpose |
-|---|---|
-| `agent_config.json` | Model, temperature, agent behaviour |
-| `obsidian_config.json` | Vault path and API key |
-| `claude_desktop_config.json` | MCP host config for Claude Desktop |
+```json
+"OBSIDIAN_VAULT_PATH": "/path/to/your/vault"
+```
 
-> Obsidian requires the **Local REST API** plugin. Get your key from Obsidian → Settings → Local REST API.
+Downloaded PDFs go to `./papers/` by default. Change `PAPER_STORAGE` in the same config to override.
 
-### 4. Run
+---
+
+## Running
+
+**Streamlit UI**
 
 ```bash
-# Streamlit UI
 streamlit run ui_app.py
+```
 
-# CLI
+Click **Start Agent** in the sidebar. The agent starts MCP servers as subprocesses and signals `AGENT_READY` when all three are connected.
+
+**With an alternate provider**
+
+```bash
+DARWIN_CONFIG=config/agent_config_groq.json streamlit run ui_app.py
+```
+
+**CLI**
+
+```bash
 python agent_wrapper.py
 ```
 
 ---
 
-## Components
+## MCP Servers
 
-| Component | Path | Role |
+Each server is a standalone Python process that exposes tools over stdio.
+
+| Server | Path | Tools |
 |---|---|---|
-| Research Agent | `src/agent/` | Orchestrates the full pipeline |
-| ArXiv Server | `src/arxiv_server/` | Search and fetch papers |
-| PDF Parser | `src/pdf_parser/` | Extract text and figures from PDFs |
-| Obsidian Server | `src/obsidian_server/` | Read and write vault notes |
-| UI | `ui_app.py` | Streamlit interface |
-| Agent Wrapper | `agent_wrapper.py` | CLI entry point |
+| ArXiv | `src/arxiv_server/server.py` | `search_papers`, `download_paper`, `read_paper`, `confirm_download`, `list_papers` |
+| PDF Parser | `src/pdf_parser/server.py` | `extract_pdf_sections`, `extract_figures` |
+| Obsidian | `src/obsidian_server/server.py` | `obsidian_create_note`, `obsidian_create_paper_note`, `obsidian_global_search` |
+
+Server config is in `config/claude_desktop_config.json`. The MCP client reads this at startup and connects to each server.
 
 ---
 
-## ArXiv Tools
+## Search engine
 
-| Tool | Description |
-|---|---|
-| `search_papers` | Query arXiv with keyword, date, and category filters |
-| `download_paper` | Download a paper by arXiv ID |
-| `list_papers` | Browse locally stored papers |
-| `read_paper` | Read the content of a downloaded paper |
+`search_papers` rewrites plain-English queries into structured arXiv Lucene queries scoped to title and abstract (`ti:`, `abs:`). It runs two passes — relevance-sorted and date-sorted — and merges results. If both return nothing it falls back to a broadened OR query. Raw keyword search is used as the baseline for evaluation.
 
 ---
 
-## MCP Config
+## Evaluation
 
-```json
-{
-    "mcpServers": {
-        "arxiv-mcp-server": {
-            "command": "uv",
-            "args": ["tool", "run", "arxiv-mcp-server", "--storage-path", "./papers"]
-        },
-        "obsidian": {
-            "command": "obsidian-mcp-server",
-            "env": {
-                "OBSIDIAN_API_KEY": "your-key",
-                "OBSIDIAN_PORT": "27123",
-                "DEFAULT_FOLDER": "Research/Incoming"
-            }
-        }
-    }
-}
+```bash
+# Full system evaluation
+python evaluate_system.py
+
+# Search engine comparison only (structured vs baseline)
+python evaluate_search.py
+
+# Single section
+python evaluate_system.py --section pdf
 ```
 
+Outputs a timestamped CSV and JSON to the working directory. Run `plot_eval_results.py` against the JSON to generate charts.
+
 ---
 
-## Agent Workflow
+## Project structure
 
-When given a research topic, the agent will:
-
-1. Search arXiv and surface the most relevant papers
-2. Download and parse selected PDFs
-3. Create structured notes in your Obsidian vault
-4. Link new notes to existing research in your vault
-5. Generate a digest summarising all findings
-
-Downloaded papers are cached locally in `papers/`.
+```
+Darwin/
+├── src/
+│   ├── agent/
+│   │   ├── mcp_client.py       # MCP session manager + tool router
+│   │   ├── ollama_client.py    # Ollama chat wrapper
+│   │   └── openai_client.py    # OpenAI-compatible wrapper (Groq, OpenAI)
+│   ├── arxiv_server/server.py
+│   ├── pdf_parser/server.py
+│   └── obsidian_server/server.py
+├── config/
+│   ├── agent_config.json
+│   └── claude_desktop_config.json
+├── agent_wrapper.py            # Subprocess entry point used by the UI
+├── ui_app.py                   # Streamlit frontend
+├── evaluate_system.py          # End-to-end evaluation
+└── evaluate_search.py          # Search engine comparison
+```
