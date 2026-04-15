@@ -218,16 +218,24 @@ async def main():
                             result_str = _extract_result_text(result)
                             print(f"TOOL_EXECUTE:{name}:{result_str[:100]}", flush=True)
 
-                            # For search results, surface papers directly to the UI
+                            # For search results, send each paper as structured JSON
+                            # using the PAPER_CARD: prefix so the UI renders them as
+                            # cards (not mixed into the text response).
                             if name == "search_papers":
                                 try:
-                                    papers = json.loads(result_str)
-                                    actual = [p for p in papers if not p.get("error")]
-                                    if actual:
-                                        print(f"AGENT_RESPONSE:Found {len(actual)} papers:", flush=True)
-                                        for i, p in enumerate(actual, 1):
-                                            print(f"AGENT_RESPONSE:{i}. [{p.get('id', '')}] {p.get('title', '')} ({p.get('published', '')})", flush=True)
-                                            print(f"AGENT_RESPONSE:   {p.get('summary', '')[:150]}...", flush=True)
+                                    search_results = json.loads(result_str)
+                                    actual = [p for p in search_results if not p.get("error")]
+                                    for p in actual:
+                                        card = json.dumps({
+                                            "id": p.get("id", ""),
+                                            "title": p.get("title", ""),
+                                            "summary": p.get("summary", "")[:300],
+                                            "arxiv_url": p.get("arxiv_url", ""),
+                                            "pdf_url": p.get("pdf_url", ""),
+                                            "authors": p.get("authors", ""),
+                                            "published": p.get("published", ""),
+                                        })
+                                        print(f"PAPER_CARD:{card}", flush=True)
                                 except Exception:
                                     pass
 
