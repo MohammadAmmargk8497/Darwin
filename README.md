@@ -2,6 +2,8 @@
 
 Darwin is an autonomous research agent that connects a local LLM to arXiv, a PDF parser, and Obsidian through MCP (Model Context Protocol). You give it a topic, it searches, downloads, reads, and saves structured notes — all locally.
 
+The agent is built around a tool-calling loop where the LLM reasons over a growing message history and dispatches tools as needed — no fixed pipeline, no hardcoded steps. Each tool is an independent MCP server communicating over stdio, so the architecture is modular and the LLM is the only orchestrator. Inference runs entirely through Ollama, meaning no queries, paper content, or API keys leave the machine.
+
 ---
 
 ## How it works
