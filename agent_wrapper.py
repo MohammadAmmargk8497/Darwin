@@ -58,8 +58,9 @@ def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -
             else:
                 converted[key] = value
         else:
-            converted[key] = value
-    
+            # Drop arguments not in schema — small models hallucinate extra params
+            pass
+
     # Remove empty/null values that confuse MCP schema validation
     return {k: v for k, v in converted.items() if v is not None and v != [] and v != {} and v != ""}
 

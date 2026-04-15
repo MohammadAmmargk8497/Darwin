@@ -84,16 +84,18 @@ def obsidian_read_note(note_path: str) -> str:
         return f"Error reading note: {str(e)}"
 
 @mcp.tool()
-def obsidian_create_note(title: str, content: str, tags: list = None) -> dict:
+def obsidian_create_note(title: str, content: str = "", tags: list = None) -> dict:
     """
     Create a new note in Obsidian with frontmatter and structured sections.
     Args:
         title: Title of the note
-        content: Main content in markdown
+        content: Main content in markdown (optional, defaults to empty)
         tags: List of tags to add (e.g., ["ml", "2025"])
     """
     logging.info(f"Creating note: {title}")
-    
+
+    if not content:
+        content = f"Research note about {title}."
     if tags is None:
         tags = []
     
@@ -213,21 +215,25 @@ def obsidian_global_search(query: str) -> list:
     ]
 
 @mcp.tool()
-def obsidian_create_paper_note(paper_id: str, title: str, authors: list, abstract: str, 
+def obsidian_create_paper_note(paper_id: str, title: str = "", authors: list = None, abstract: str = "",
                                 methods: str = "", findings: str = "", keywords: list = None) -> dict:
     """
     Create a structured research paper note with standard sections.
     Args:
         paper_id: ArXiv ID or unique identifier
-        title: Paper title
-        authors: List of author names
-        abstract: Paper abstract
+        title: Paper title (optional, defaults to paper_id)
+        authors: List of author names (optional)
+        abstract: Paper abstract (optional)
         methods: Methods section summary
         findings: Key findings summary
         keywords: Research keywords/topics
     """
     logging.info(f"Creating paper note for: {paper_id}")
-    
+
+    if not title:
+        title = f"Paper {paper_id}"
+    if authors is None:
+        authors = []
     if keywords is None:
         keywords = []
     
