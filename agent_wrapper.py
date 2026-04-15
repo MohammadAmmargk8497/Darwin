@@ -42,12 +42,26 @@ def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -
                     converted[key] = float(value)
                 except (ValueError, TypeError):
                     converted[key] = value
+            elif param_type == 'array' and isinstance(value, str):
+                try:
+                    import ast
+                    parsed = ast.literal_eval(value)
+                    if isinstance(parsed, list):
+                        converted[key] = parsed
+                    else:
+                        converted[key] = value
+                except (ValueError, SyntaxError):
+                    try:
+                        converted[key] = json.loads(value)
+                    except (ValueError, TypeError):
+                        converted[key] = value
             else:
                 converted[key] = value
         else:
             converted[key] = value
     
-    return converted
+    # Remove empty/null values that confuse MCP schema validation
+    return {k: v for k, v in converted.items() if v is not None and v != [] and v != {} and v != ""}
 
 def _extract_result_text(result) -> str:
     """Extract plain text from an MCP CallToolResult (or fall back to str)."""

@@ -1,7 +1,7 @@
 {
     "mcpServers": {
         "arxiv": {
-            "command": "python3",
+            "command": "python",
             "args": [
                 "${PROJECT_ROOT}/src/arxiv_server/server.py"
             ],
@@ -10,13 +10,13 @@
             }
         },
         "pdf_tools": {
-            "command": "python3",
+            "command": "python",
             "args": [
                 "${PROJECT_ROOT}/src/pdf_parser/server.py"
             ]
         },
         "obsidian": {
-            "command": "python3",
+            "command": "python",
             "args": [
                 "${PROJECT_ROOT}/src/obsidian_server/server.py"
             ],
