@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Wrapper script for running agent in subprocess mode.
 Reads commands from stdin and writes results to stdout.
@@ -218,10 +218,12 @@ async def main():
                             if name == "search_papers":
                                 try:
                                     papers = json.loads(result_str)
-                                    print(f"AGENT_RESPONSE:Found {len(papers)} papers:", flush=True)
-                                    for i, p in enumerate(papers, 1):
-                                        print(f"AGENT_RESPONSE:{i}. [{p['id']}] {p['title']} ({p.get('published', '')})", flush=True)
-                                        print(f"AGENT_RESPONSE:   {p.get('summary', '')[:150]}...", flush=True)
+                                    actual = [p for p in papers if not p.get("error")]
+                                    if actual:
+                                        print(f"AGENT_RESPONSE:Found {len(actual)} papers:", flush=True)
+                                        for i, p in enumerate(actual, 1):
+                                            print(f"AGENT_RESPONSE:{i}. [{p.get('id', '')}] {p.get('title', '')} ({p.get('published', '')})", flush=True)
+                                            print(f"AGENT_RESPONSE:   {p.get('summary', '')[:150]}...", flush=True)
                                 except Exception:
                                     pass
 
