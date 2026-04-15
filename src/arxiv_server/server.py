@@ -137,7 +137,7 @@ def _run_search(
     return results
 
 
-# --- Public MCP tool ---
+# --- Public MCP tools ---
 
 @mcp.tool()
 def search_papers(
@@ -165,7 +165,7 @@ def search_papers(
 
     Returns:
         List of paper dicts with keys: id, title, authors, published,
-        categories, summary, pdf_url.
+        categories, summary, arxiv_url, pdf_url.
         On failure, returns a list containing a single error dict with key
         "error" so the caller always receives a list, never an exception.
     """
@@ -225,6 +225,7 @@ def search_papers(
     logger.info(f"Returning {len(results)} results for: '{query}'")
     return results
 
+
 @mcp.tool()
 def download_paper(paper_id: str) -> str:
     """
@@ -232,25 +233,26 @@ def download_paper(paper_id: str) -> str:
     Returns the file path.
     """
     logger.info(f"Downloading {paper_id}...")
-    
+
     # Check if already exists
     for filename in os.listdir(PAPER_STORAGE):
         if filename.startswith(paper_id) and filename.endswith(".pdf"):
-             return os.path.join(PAPER_STORAGE, filename)
+            return os.path.join(PAPER_STORAGE, filename)
 
     client = arxiv.Client()
     paper = next(client.results(arxiv.Search(id_list=[paper_id])))
-    
-    # Download
+
     path = paper.download_pdf(dirpath=PAPER_STORAGE, filename=f"{paper_id}.pdf")
     abs_path = os.path.abspath(path)
     logger.info(f"Downloaded to {abs_path}")
     return abs_path
 
+
 @mcp.tool()
 def list_papers() -> list:
     """List all downloaded papers."""
     return [f for f in os.listdir(PAPER_STORAGE) if f.endswith(".pdf")]
+
 
 @mcp.tool()
 def read_paper(paper_id: str, max_chars: int = 15000) -> str:
@@ -263,7 +265,7 @@ def read_paper(paper_id: str, max_chars: int = 15000) -> str:
     path = os.path.join(PAPER_STORAGE, f"{paper_id}.pdf")
     if not os.path.exists(path):
         return f"Error: Paper {paper_id} not found locally. Download it first."
-    
+
     try:
         doc = pymupdf.open(path)
         text = ""
@@ -277,13 +279,39 @@ def read_paper(paper_id: str, max_chars: int = 15000) -> str:
     except Exception as e:
         return f"Error reading PDF: {str(e)}"
 
+
 # --- Production Features ---
 
 @mcp.tool()
-def confirm_download(paper_title: str, abstract: str) -> bool:
-    """Ask user before downloading paper (Human-in-the-Loop)."""
-    logger.info(f"Requesting confirmation to download: {paper_title}")
-    return True
+def confirm_download(paper_title: str, paper_id: str, published_date: str, abstract: str) -> dict:
+    """
+    Prepare paper download confirmation data (Human-in-the-Loop).
+    Returns paper details for user review before download approval.
+
+    Args:
+        paper_title: Full title of the paper
+        paper_id: ArXiv ID
+        published_date: Publication date
+        abstract: Paper abstract (will be truncated for display)
+    """
+    logger.info(f"Preparing confirmation for download: {paper_title}")
+
+    abstract_preview = abstract[:300] + "..." if len(abstract) > 300 else abstract
+
+    return {
+        "status": "awaiting_confirmation",
+        "paper_id": paper_id,
+        "paper_title": paper_title,
+        "published_date": published_date,
+        "abstract_preview": abstract_preview,
+        "message": (
+            f"PAPER DOWNLOAD CONFIRMATION\n\n"
+            f"Title: {paper_title}\nPaper ID: {paper_id}\nPublished: {published_date}\n\n"
+            f"Abstract Preview:\n{abstract_preview}\n\n"
+            f"Respond with 'yes' to download, 'no' to skip, or 'skip' to move to next paper."
+        ),
+    }
+
 
 @mcp.tool()
 def log_research_action(action: str, paper_id: str, result: str):
@@ -296,6 +324,7 @@ def log_research_action(action: str, paper_id: str, result: str):
             VALUES (?, ?, ?, ?)
         """, (datetime.now().isoformat(), action, paper_id, str(result)))
     logger.info(f"Logged action: {action}")
+
 
 if __name__ == "__main__":
     try:
