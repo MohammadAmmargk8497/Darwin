@@ -13,6 +13,7 @@ class MCPClient:
         self.sessions: Dict[str, ClientSession] = {}
         self.exit_stack = AsyncExitStack()
         self.tools: List[Dict[str, Any]] = []
+        self._tool_server_map: Dict[str, ClientSession] = {}  # cache: tool name → session
 
     async def connect(self):
         """Connect to all servers defined in the config."""
@@ -62,6 +63,7 @@ class MCPClient:
     async def list_tools(self) -> List[Dict[str, Any]]:
         """List all tools from all connected servers."""
         self.tools = []
+        self._tool_server_map = {}
         for name, session in self.sessions.items():
             try:
                 result = await session.list_tools()
@@ -78,30 +80,21 @@ class MCPClient:
                         }
                     }
                     self.tools.append(tool_def)
+                    self._tool_server_map[tool.name] = session  # cache lookup
             except Exception as e:
                 print(f"Error listing tools for {name}: {e}")
         return self.tools
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        """Call a tool by name (finding the right server)."""
-        # Find which server has the tool
-        # We need to cache which server has which tool, or query. 
-        # For simplicity, we query all or iterate. 
-        # Better: map tool_name -> server_session during list_tools
-        
-        # Re-scanning for now to find the server
-        for name, session in self.sessions.items():
-            result = await session.list_tools()
-            for tool in result.tools:
-                if tool.name == tool_name:
-                    print(f"Calling {tool_name} on {name}...")
-                    try:
-                        result = await session.call_tool(tool_name, arguments)
-                        return result
-                    except Exception as e:
-                        return f"Error executing tool {tool_name}: {e}"
-        
-        return f"Tool {tool_name} not found."
+        """Call a tool by name (finding the right server via cached map)."""
+        session = self._tool_server_map.get(tool_name)
+        if session is None:
+            return f"Tool {tool_name} not found."
+        print(f"Calling {tool_name}...")
+        try:
+            return await session.call_tool(tool_name, arguments)
+        except Exception as e:
+            return f"Error executing tool {tool_name}: {e}"
 
     async def cleanup(self):
         """Close specific sessions."""

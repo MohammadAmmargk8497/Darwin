@@ -145,11 +145,14 @@ async def main():
 
                 if content:
                     print(f"AGENT_RESPONSE:{content}", flush=True)
-                    messages.append({"role": "assistant", "content": content})
 
                 if not tool_calls:
+                    # No tool calls — content is the final response for this turn
+                    if content:
+                        messages.append({"role": "assistant", "content": content})
                     break
 
+                # Has tool calls — append full message (already contains content if any)
                 messages.append(message)
 
                 for tc in tool_calls:
@@ -170,12 +173,10 @@ async def main():
                         if skip_approval or paper_id in approved_papers:
                             pass  # Allow
                         else:
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call_id,
-                                "name": name,
-                                "content": f"BLOCKED: Paper {paper_id} requires approval",
-                            })
+                            blocked_msg = {"role": "tool", "name": name, "content": f"BLOCKED: Paper {paper_id} requires approval"}
+                            if tool_call_id:
+                                blocked_msg["tool_call_id"] = tool_call_id
+                            messages.append(blocked_msg)
                             print(f"TOOL_BLOCKED:{name}:{paper_id}", flush=True)
                             continue
 
@@ -202,12 +203,10 @@ async def main():
                                 response_msg = "User rejected download"
                                 print(f"TOOL_USER_REJECTED", flush=True)
 
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "name": name,
-                            "content": response_msg,
-                        })
+                        confirm_result_msg = {"role": "tool", "name": name, "content": response_msg}
+                        if tool_call_id:
+                            confirm_result_msg["tool_call_id"] = tool_call_id
+                        messages.append(confirm_result_msg)
                     else:
                         # Regular tool execution
                         try:
@@ -226,20 +225,16 @@ async def main():
                                 except Exception:
                                     pass
 
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call_id,
-                                "name": name,
-                                "content": result_str,
-                            })
+                            tool_result_msg = {"role": "tool", "name": name, "content": result_str}
+                            if tool_call_id:
+                                tool_result_msg["tool_call_id"] = tool_call_id
+                            messages.append(tool_result_msg)
                         except Exception as e:
                             error_str = f"Tool error: {str(e)}"
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call_id,
-                                "name": name,
-                                "content": error_str,
-                            })
+                            error_msg = {"role": "tool", "name": name, "content": error_str}
+                            if tool_call_id:
+                                error_msg["tool_call_id"] = tool_call_id
+                            messages.append(error_msg)
                             print(f"TOOL_ERROR:{name}:{error_str}", flush=True)
 
             print("AGENT_END", flush=True)  # Signal UI that this command is fully done
