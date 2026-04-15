@@ -1,22 +1,22 @@
 {
     "mcpServers": {
         "arxiv": {
-            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
+            "command": "python3",
             "args": [
                 "${PROJECT_ROOT}/src/arxiv_server/server.py"
             ],
             "env": {
-                "PAPER_STORAGE": "/Users/samanthajohn/darwin/Darwin/papers"
+                "PAPER_STORAGE": "${PROJECT_ROOT}/papers"
             }
         },
         "pdf_tools": {
-            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
+            "command": "python3",
             "args": [
                 "${PROJECT_ROOT}/src/pdf_parser/server.py"
             ]
         },
         "obsidian": {
-            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
+            "command": "python3",
             "args": [
                 "${PROJECT_ROOT}/src/obsidian_server/server.py"
             ],
@@ -24,7 +24,7 @@
                 "OBSIDIAN_API_KEY": "aa910b265c71eea1ef50ac65eec6b7bbb77aec3e0b462dc68cbe4559675ec769",
                 "OBSIDIAN_PORT": "27123",
                 "DEFAULT_FOLDER": "Research/Incoming",
-                "OBSIDIAN_VAULT_PATH": "/Users/samanthajohn/darwin/Darwin/Darwin Research"
+                "OBSIDIAN_VAULT_PATH": "${PROJECT_ROOT}/Darwin Research"
             }
         }
     }
