@@ -16,21 +16,66 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .paper-card {
-        background-color: #f0f4f8;
-        padding: 15px;
-        border-radius: 8px;
+    /* Clickable paper card */
+    a.paper-card-link {
+        text-decoration: none;
+        display: block;
         margin: 10px 0;
-        border-left: 4px solid #1976d2;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .paper-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin: 12px 0;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.07);
+        transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+        cursor: pointer;
         color: #1a1a1a;
     }
-    .paper-id { font-family: monospace; color: #666; font-size: 0.9em; }
-    .paper-title { font-size: 1.1em; font-weight: bold; color: #1976d2; margin: 5px 0; }
-    .paper-summary { color: #333; line-height: 1.5; margin: 10px 0; }
-    .agent-message { background-color: #e8f5e9; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #4caf50; color: #1a1a1a; }
-    .user-message { background-color: #f3e5f5; padding: 12px; border-radius: 5px; margin: 5px 0; text-align: right; color: #1a1a1a; }
-    .tool-message { background-color: #fff3e0; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #ff9800; font-family: monospace; font-size: 0.9em; color: #1a1a1a; }
+    a.paper-card-link:hover .paper-card {
+        box-shadow: 0 8px 24px rgba(25, 118, 210, 0.18), 0 2px 6px rgba(0,0,0,0.08);
+        transform: translateY(-3px);
+        border-color: #1976d2;
+    }
+    .paper-meta {
+        font-size: 0.76em;
+        color: #64748b;
+        font-family: monospace;
+        margin-bottom: 7px;
+    }
+    .paper-title {
+        font-size: 1.05em;
+        font-weight: 700;
+        color: #1976d2;
+        line-height: 1.4;
+        margin: 0 0 10px 0;
+    }
+    .paper-summary {
+        color: #475569;
+        font-size: 0.88em;
+        line-height: 1.6;
+        margin: 0 0 14px 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .paper-links {
+        display: flex;
+        gap: 14px;
+        font-size: 0.82em;
+        font-weight: 600;
+        color: #1976d2;
+        border-top: 1px solid #f0f4f8;
+        padding-top: 10px;
+    }
+    .paper-links span { opacity: 0.85; }
+    .paper-links span:hover { opacity: 1; text-decoration: underline; }
+    /* Keep old classes for backward compat */
+    .agent-message { color: #1a1a1a; }
+    .user-message  { color: #1a1a1a; }
+    .tool-message  { color: #1a1a1a; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,13 +169,17 @@ def send_command_to_agent(command):
             if line.startswith("AGENT_RESPONSE:"):
                 content = line.replace("AGENT_RESPONSE:", "", 1)
                 response_lines.append(("agent", content))
-                # Try to extract papers from this response
-                extracted = extract_papers_from_response(content)
-                if extracted:
-                    papers.extend(extracted)
+            elif line.startswith("PAPER_CARD:"):
+                # Structured paper data sent by agent_wrapper — render as UI cards
+                try:
+                    paper = json.loads(line.replace("PAPER_CARD:", "", 1))
+                    if "id" in paper and "title" in paper:
+                        papers.append(paper)
+                except Exception:
+                    pass
             elif line.startswith("TOOL_EXECUTE:"):
                 content = line.replace("TOOL_EXECUTE:", "", 1)
-                response_lines.append(("tool", f"🔧 Executing: {content}"))
+                response_lines.append(("tool", f"🔧 {content}"))
             elif line.startswith("TOOL_ERROR:"):
                 content = line.replace("TOOL_ERROR:", "", 1)
                 response_lines.append(("error", f"✗ Error: {content}"))
@@ -150,13 +199,14 @@ def send_command_to_agent(command):
                 break  # Agent finished processing this command
             elif line.startswith("AGENT_EXIT"):
                 break
-        
-        # Format response
-        final_response = ""
-        for role, content in response_lines:
-            if content.strip():
-                final_response += content + "\n"
-        
+
+        # Only include the LLM's actual reply — tool activity stays out of the
+        # response text so it doesn't look like command-line output.
+        final_response = "\n".join(
+            content for role, content in response_lines
+            if role == "agent" and content.strip()
+        )
+
         return final_response.strip() if final_response.strip() else "Processing...", papers
     
     except Exception as e:
@@ -164,7 +214,6 @@ def send_command_to_agent(command):
 
 # Header
 st.markdown("# 🧬 Darwin Research Agent")
-st.markdown("**Web frontend for your research agent**")
 
 # Sidebar
 with st.sidebar:
@@ -226,38 +275,17 @@ with st.sidebar:
             else:
                 st.caption("No notes created yet")
 
+# Increment this key to clear the text_input after each submission
+if "input_key" not in st.session_state:
+    st.session_state.input_key = 0
+
 # Main chat area
 if not st.session_state.agent_ready:
     st.info("👈 Click **'Start Agent'** in the sidebar to begin")
 else:
-    # Display chat history
-    for msg in st.session_state.chat_history:
-        if msg["role"] == "user":
-            st.markdown(f"<div class='user-message'><b>You:</b> {msg['content']}</div>", unsafe_allow_html=True)
-        elif msg["role"] == "agent":
-            st.markdown(f"<div class='agent-message'>{msg['content']}</div>", unsafe_allow_html=True)
-            
-            # Display papers if this response had papers
-            if msg.get("papers"):
-                st.markdown("### 📄 Search Results:")
-                for paper in msg["papers"]:
-                    st.markdown(f"""
-                    <div class='paper-card'>
-                        <div class='paper-id'>ID: {paper['id']}</div>
-                        <div class='paper-title'>{paper['title']}</div>
-                        <div class='paper-summary'>{paper['summary']}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        elif msg["role"] == "error":
-            st.error(msg['content'])
-    
-    st.divider()
-    
-    # Input area
+    # ── Input at the top ──────────────────────────────────────────────────────
     col1, col2 = st.columns([5, 1])
-    
     with col1:
-        # Check if quick command was clicked
         if "quick_cmd" in st.session_state:
             user_input = st.session_state.quick_cmd
             st.session_state.quick_cmd = None
@@ -266,29 +294,77 @@ else:
             user_input = st.text_input(
                 "Type your command:",
                 placeholder="search papers on..., download paper..., read paper..., list papers, create note...",
-                key="user_input"
+                key=f"user_input_{st.session_state.input_key}",
+                label_visibility="collapsed",
             )
             should_send = False
-    
     with col2:
         send_button = st.button("📤 Send", use_container_width=True)
-    
+
     if (send_button or should_send) and user_input:
-        # Add user message to history
         st.session_state.chat_history.append({"role": "user", "content": user_input})
-        
-        # Send command and get response
-        with st.spinner("Executing..."):
+        with st.spinner("Thinking..."):
             response, papers = send_command_to_agent(user_input)
-            
-            # Add response to history with papers
             st.session_state.chat_history.append({
                 "role": "agent",
                 "content": response,
-                "papers": papers
+                "papers": papers,
             })
-        
+        # Increment key → text_input renders fresh and empty on next run
+        st.session_state.input_key += 1
         st.rerun()
+
+    st.divider()
+
+    # ── Chat history ──────────────────────────────────────────────────────────
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg['content'])
+        elif msg["role"] == "agent":
+            with st.chat_message("assistant"):
+                if msg.get("papers"):
+                    # When cards are shown, only display the agent's intro sentence —
+                    # not the full formatted paper list which would duplicate the cards.
+                    lines = [l for l in msg['content'].splitlines() if l.strip()]
+                    intro = next(
+                        (l for l in lines if not l.startswith("#") and not l.startswith("**") and not l.startswith("-")),
+                        ""
+                    )
+                    if intro:
+                        st.markdown(intro)
+
+                    st.markdown(f"#### 📄 {len(msg['papers'])} Papers Found")
+                    for paper in msg["papers"]:
+                        arxiv_url = paper.get("arxiv_url", "")
+                        pdf_url   = paper.get("pdf_url", "")
+                        meta = " · ".join(filter(None, [
+                            paper.get("id", ""),
+                            paper.get("published", ""),
+                            paper.get("authors", ""),
+                        ]))
+                        # Use proper <a> tags — no nested anchors so Abstract goes to
+                        # the abstract page and PDF goes to the actual PDF file.
+                        abstract_link = f'<a href="{arxiv_url}" target="_blank">Abstract</a>' if arxiv_url else ""
+                        pdf_link      = f'<a href="{pdf_url}"   target="_blank">PDF</a>'      if pdf_url   else ""
+                        links_html    = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(filter(None, [abstract_link, pdf_link]))
+                        st.markdown(f"""
+                        <div class="paper-card">
+                            <div class="paper-meta">{meta}</div>
+                            <div class="paper-title">
+                                <a href="{arxiv_url or '#'}" target="_blank" style="color:inherit;text-decoration:none;">
+                                    {paper.get("title", "")}
+                                </a>
+                            </div>
+                            <div class="paper-summary">{paper.get("summary", "")}</div>
+                            <div class="paper-links">{links_html}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    # Non-search responses: render the full LLM reply as markdown
+                    st.markdown(msg['content'])
+        elif msg["role"] == "error":
+            st.error(msg['content'])
 
 # Footer
 st.divider()
