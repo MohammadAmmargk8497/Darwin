@@ -54,7 +54,8 @@ def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -
 async def run_agent():
     # 1. Load Config
     try:
-        with open("config/agent_config.json", "r") as f:
+        config_path = os.environ.get("DARWIN_CONFIG", "config/agent_config.json")
+        with open(config_path, "r") as f:
             agent_config = json.load(f)
     except FileNotFoundError:
         print("config/agent_config.json not found. Using defaults.")

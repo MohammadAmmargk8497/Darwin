@@ -2,6 +2,7 @@ import streamlit as st
 import subprocess
 import time
 import json
+import os
 import re
 from pathlib import Path
 
@@ -15,20 +16,21 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .paper-card { 
-        background-color: #f0f4f8; 
-        padding: 15px; 
-        border-radius: 8px; 
-        margin: 10px 0; 
+    .paper-card {
+        background-color: #f0f4f8;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
         border-left: 4px solid #1976d2;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        color: #1a1a1a;
     }
     .paper-id { font-family: monospace; color: #666; font-size: 0.9em; }
     .paper-title { font-size: 1.1em; font-weight: bold; color: #1976d2; margin: 5px 0; }
     .paper-summary { color: #333; line-height: 1.5; margin: 10px 0; }
-    .agent-message { background-color: #e8f5e9; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #4caf50; }
-    .user-message { background-color: #f3e5f5; padding: 12px; border-radius: 5px; margin: 5px 0; text-align: right; }
-    .tool-message { background-color: #fff3e0; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #ff9800; font-family: monospace; font-size: 0.9em; }
+    .agent-message { background-color: #e8f5e9; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #4caf50; color: #1a1a1a; }
+    .user-message { background-color: #f3e5f5; padding: 12px; border-radius: 5px; margin: 5px 0; text-align: right; color: #1a1a1a; }
+    .tool-message { background-color: #fff3e0; padding: 12px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #ff9800; font-family: monospace; font-size: 0.9em; color: #1a1a1a; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -46,6 +48,9 @@ def start_agent():
     """Start the agent wrapper as a subprocess"""
     try:
         cwd = str(Path(__file__).parent)
+        env = os.environ.copy()
+        # Propagate DARWIN_CONFIG so the wrapper uses the same provider as the UI
+        # e.g. DARWIN_CONFIG=config/agent_config_groq.json streamlit run ui_app.py
         process = subprocess.Popen(
             ["python", "agent_wrapper.py"],
             stdin=subprocess.PIPE,
@@ -53,7 +58,8 @@ def start_agent():
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            cwd=cwd
+            cwd=cwd,
+            env=env
         )
 
         # Wait for agent to be ready (MCP servers may take a few seconds to start)

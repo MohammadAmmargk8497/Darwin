@@ -12,6 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.agent.ollama_client import OllamaClient
+from src.agent.openai_client import OpenAIClient
 from src.agent.mcp_client import MCPClient
 
 def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -> dict:
@@ -48,21 +49,46 @@ def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -
     
     return converted
 
+def _extract_result_text(result) -> str:
+    """Extract plain text from an MCP CallToolResult (or fall back to str)."""
+    if hasattr(result, "content") and isinstance(result.content, list):
+        parts = []
+        for item in result.content:
+            if hasattr(item, "text"):
+                parts.append(item.text)
+            elif isinstance(item, dict) and "text" in item:
+                parts.append(item["text"])
+        if parts:
+            return "\n".join(parts)
+    return str(result)
+
+
 async def main():
     """Main agent loop"""
-    # Load config
+    # Load config — DARWIN_CONFIG env var overrides the default path
+    config_path = os.environ.get("DARWIN_CONFIG", "config/agent_config.json")
     try:
-        with open("config/agent_config.json", "r") as f:
+        with open(config_path, "r") as f:
             agent_config = json.load(f)
     except FileNotFoundError:
         agent_config = {"model_name": "llama3.1", "api_base": "http://localhost:11434"}
 
-    # Initialize clients
-    ollama = OllamaClient(
-        model_name=agent_config.get("model_name", "llama3.1"),
-        host=agent_config.get("api_base", "http://localhost:11434"),
-        system_prompt=agent_config.get("system_prompt", "")
-    )
+    # Initialize the right client based on provider
+    provider = agent_config.get("provider", "ollama").lower()
+    if provider == "openai":
+        llm_client = OpenAIClient(
+            model_name=agent_config.get("model_name", "gpt-4"),
+            api_key=agent_config.get("api_key") or os.environ.get("OPENAI_API_KEY", ""),
+            base_url=agent_config.get("api_base", "https://api.openai.com/v1"),
+            system_prompt=agent_config.get("system_prompt", "")
+        )
+    else:
+        llm_client = OllamaClient(
+            model_name=agent_config.get("model_name", "llama3.1"),
+            host=agent_config.get("api_base", "http://localhost:11434"),
+            system_prompt=agent_config.get("system_prompt", "")
+        )
+    ollama = llm_client  # keep existing variable name so the rest of the file is unchanged
     
     mcp_client = MCPClient(config_path="config/claude_desktop_config.json")
     approved_papers = set()
@@ -95,15 +121,19 @@ async def main():
 
             # Agent turn loop
             while True:
-                # Retry on transient CUDA/Ollama 500 errors (model reload takes ~15s)
-                import time as _time
-                for attempt in range(3):
-                    response = ollama.chat(messages, tools=tools)
-                    if "error" not in response:
-                        break
-                    if attempt < 2:
-                        print(f"TOOL_EXECUTE:retrying after Ollama error (attempt {attempt+1})", flush=True)
-                        _time.sleep(20)
+                # Ollama can throw transient 500s during model reload — retry a few times.
+                # OpenAI/Groq errors are not transient so we don't retry there.
+                if provider == "ollama":
+                    import time as _time
+                    for attempt in range(3):
+                        response = llm_client.chat(messages, tools=tools)
+                        if "error" not in response:
+                            break
+                        if attempt < 2:
+                            print(f"TOOL_EXECUTE:retrying after Ollama error (attempt {attempt+1})", flush=True)
+                            _time.sleep(20)
+                else:
+                    response = llm_client.chat(messages, tools=tools)
 
                 if "error" in response:
                     print(f"ERROR: {response['error']}", flush=True)
@@ -112,53 +142,56 @@ async def main():
                 message = response.get("message", {})
                 content = message.get("content", "")
                 tool_calls = message.get("tool_calls", [])
-                
+
                 if content:
                     print(f"AGENT_RESPONSE:{content}", flush=True)
                     messages.append({"role": "assistant", "content": content})
-                
+
                 if not tool_calls:
                     break
-                
+
                 messages.append(message)
 
                 for tc in tool_calls:
+                    tool_call_id = tc.get("id")  # required by OpenAI/Groq; ignored by Ollama
                     fn = tc.get("function", {})
                     name = fn.get("name")
                     args = fn.get("arguments")
-                    
+
+                    # Groq/OpenAI returns arguments as a JSON string; Ollama returns a dict
+                    if isinstance(args, str):
+                        args = json.loads(args)
+
                     args = convert_tool_arguments(args, tools, name)
-                    
+
                     # Safety gate for downloads
                     if name == "download_paper":
                         paper_id = args.get("paper_id")
                         if skip_approval or paper_id in approved_papers:
                             pass  # Allow
                         else:
-                            tool_result_message = {
+                            messages.append({
                                 "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "name": name,
                                 "content": f"BLOCKED: Paper {paper_id} requires approval",
-                                "name": name
-                            }
-                            messages.append(tool_result_message)
+                            })
                             print(f"TOOL_BLOCKED:{name}:{paper_id}", flush=True)
                             continue
-                    
+
                     # Handle confirm_download
                     if name == "confirm_download":
                         result = await mcp_client.call_tool(name, args)
-                        content_str = str(result)
-                        
                         print(f"TOOL_EXECUTE:{name}", flush=True)
-                        
+
                         if skip_approval:
                             print(f"TOOL_AUTO_APPROVE", flush=True)
                             paper_id = args.get("paper_id")
                             approved_papers.add(paper_id)
                             response_msg = f"Auto-approved download of paper {paper_id}"
                         else:
+                            content_str = _extract_result_text(result)
                             print(f"TOOL_CONFIRM:{content_str}", flush=True)
-                            # Wait for user decision
                             decision = sys.stdin.readline().strip().lower()
                             if decision in ["yes", "y"]:
                                 paper_id = args.get("paper_id")
@@ -166,48 +199,46 @@ async def main():
                                 response_msg = f"User approved download of paper {paper_id}"
                                 print(f"TOOL_USER_APPROVED", flush=True)
                             else:
-                                response_msg = f"User rejected download"
+                                response_msg = "User rejected download"
                                 print(f"TOOL_USER_REJECTED", flush=True)
-                        
-                        tool_result = {
+
+                        messages.append({
                             "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "name": name,
                             "content": response_msg,
-                            "name": name
-                        }
-                        messages.append(tool_result)
+                        })
                     else:
                         # Regular tool execution
                         try:
                             result = await mcp_client.call_tool(name, args)
-                            result_str = str(result)
+                            result_str = _extract_result_text(result)
                             print(f"TOOL_EXECUTE:{name}:{result_str[:100]}", flush=True)
 
-                            # For search results, print all papers directly so UI shows them all
+                            # For search results, surface papers directly to the UI
                             if name == "search_papers":
-                                import json as _json
                                 try:
-                                    # Extract text from MCP TextContent result
-                                    raw = result.content[0].text if hasattr(result, 'content') else result_str
-                                    papers = _json.loads(raw)
+                                    papers = json.loads(result_str)
                                     print(f"AGENT_RESPONSE:Found {len(papers)} papers:", flush=True)
                                     for i, p in enumerate(papers, 1):
-                                        print(f"AGENT_RESPONSE:{i}. [{p['id']}] {p['title']} ({p.get('published','')})", flush=True)
-                                        print(f"AGENT_RESPONSE:   {p.get('summary','')[:150]}...", flush=True)
+                                        print(f"AGENT_RESPONSE:{i}. [{p['id']}] {p['title']} ({p.get('published', '')})", flush=True)
+                                        print(f"AGENT_RESPONSE:   {p.get('summary', '')[:150]}...", flush=True)
                                 except Exception:
-                                    pass  # Fall through to let LLM summarize
+                                    pass
 
-                            tool_result = {
+                            messages.append({
                                 "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "name": name,
                                 "content": result_str,
-                                "name": name
-                            }
-                            messages.append(tool_result)
+                            })
                         except Exception as e:
                             error_str = f"Tool error: {str(e)}"
                             messages.append({
                                 "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "name": name,
                                 "content": error_str,
-                                "name": name
                             })
                             print(f"TOOL_ERROR:{name}:{error_str}", flush=True)
 
