@@ -14,6 +14,18 @@
             "args": [
                 "${PROJECT_ROOT}/src/pdf_parser/server.py"
             ]
+        },
+        "obsidian": {
+            "command": "/Users/samanthajohn/darwin/Darwin/vdar/bin/python",
+            "args": [
+                "${PROJECT_ROOT}/src/obsidian_server/server.py"
+            ],
+            "env": {
+                "OBSIDIAN_API_KEY": "aa910b265c71eea1ef50ac65eec6b7bbb77aec3e0b462dc68cbe4559675ec769",
+                "OBSIDIAN_PORT": "27123",
+                "DEFAULT_FOLDER": "Research/Incoming",
+                "OBSIDIAN_VAULT_PATH": "/Users/samanthajohn/darwin/Darwin/Darwin Research"
+            }
         }
     }
 }

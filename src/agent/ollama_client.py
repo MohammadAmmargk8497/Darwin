@@ -24,7 +24,6 @@ class OllamaClient:
              # Or just trust the caller. Usually caller manages history.
              pass
 
-        print(f"Sending request to {self.model_name}...")
         try:
             response = self.client.chat(
                 model=self.model_name,
