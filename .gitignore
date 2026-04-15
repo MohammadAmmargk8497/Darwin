@@ -129,3 +129,18 @@ papers/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Claude Code
+.claude/
+
+# Eval temp files
+_eval_vault/
+eval_output.txt
+eval_results_*.csv
+
+# LaTeX build artifacts
+*.aux
+*.toc
+*.out
+*.synctex.gz
+report.log
