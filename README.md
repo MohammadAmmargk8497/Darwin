@@ -323,6 +323,12 @@ export OBSIDIAN_VAULT_PATH="/path/to/your/vault"
 
 ---
 
+## Repository
+
+GitHub: [https://github.com/MohammadAmmargk8497/Darwin](https://github.com/MohammadAmmargk8497/Darwin)
+
+---
+
 ## License
 
 This project is for academic and research purposes.
