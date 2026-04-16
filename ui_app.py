@@ -1,196 +1,204 @@
 import streamlit as st
 import subprocess
+import threading
+import queue
 import time
 import json
 import os
 import re
 from pathlib import Path
 
-# ─── Page Config ───
+
+def _reader_thread(pipe, q):
+    """Background thread that reads lines from a pipe into a queue."""
+    try:
+        for line in iter(pipe.readline, ""):
+            q.put(line)
+    except Exception:
+        pass
+    finally:
+        q.put(None)  # sentinel
+
+# Page configuration
 st.set_page_config(
-    page_title="Darwin - Research Agent",
-    page_icon="🧬",
+    page_title="Darwin Research Agent",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ─── Custom CSS ───
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
-
-.block-container {
-    padding-top: 1rem;
-    padding-bottom: 0rem;
-    max-width: 1100px;
-}
-
-/* ── Paper Cards ── */
-.paper-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 18px 22px;
-    margin: 12px 0;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
-    transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
-    color: #1a1a1a;
-}
-.paper-card:hover {
-    box-shadow: 0 8px 24px rgba(25, 118, 210, 0.15), 0 2px 6px rgba(0,0,0,0.06);
-    transform: translateY(-2px);
-    border-color: #1976d2;
-}
-.paper-meta {
-    font-size: 0.76em;
-    color: #64748b;
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 7px;
-}
-.paper-title {
-    font-size: 1.05em;
-    font-weight: 700;
-    color: #1976d2;
-    line-height: 1.4;
-    margin: 0 0 10px 0;
-}
-.paper-title a {
-    color: inherit;
-    text-decoration: none;
-}
-.paper-title a:hover {
-    text-decoration: underline;
-}
-.paper-summary {
-    color: #475569;
-    font-size: 0.88em;
-    line-height: 1.6;
-    margin: 0 0 14px 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-.paper-links {
-    display: flex;
-    gap: 14px;
-    font-size: 0.82em;
-    font-weight: 600;
-    border-top: 1px solid #f0f4f8;
-    padding-top: 10px;
-}
-.paper-links a {
-    color: #1976d2;
-    text-decoration: none;
-}
-.paper-links a:hover {
-    text-decoration: underline;
-}
-
-/* ── Sidebar Stats ── */
-.stat-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 14px;
-    margin: 6px 0;
-}
-.stat-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 5px 0; border-bottom: 1px solid #f0f4f8;
-}
-.stat-row:last-child { border-bottom: none; }
-.stat-label { color: #64748b; font-size: 0.85rem; }
-.stat-val { color: #1e293b; font-weight: 600; }
-
-/* ── Footer ── */
-.foot {
-    text-align: center; color: #94a3b8; font-size: 0.78rem;
-    padding: 16px 0; margin-top: 20px; border-top: 1px solid #e2e8f0;
-}
+    /* Clickable paper card */
+    a.paper-card-link {
+        text-decoration: none;
+        display: block;
+        margin: 10px 0;
+    }
+    .paper-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin: 12px 0;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.07);
+        transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+        cursor: pointer;
+        color: #1a1a1a;
+    }
+    a.paper-card-link:hover .paper-card {
+        box-shadow: 0 8px 24px rgba(25, 118, 210, 0.18), 0 2px 6px rgba(0,0,0,0.08);
+        transform: translateY(-3px);
+        border-color: #1976d2;
+    }
+    .paper-meta {
+        font-size: 0.76em;
+        color: #64748b;
+        font-family: monospace;
+        margin-bottom: 7px;
+    }
+    .paper-title {
+        font-size: 1.05em;
+        font-weight: 700;
+        color: #1976d2;
+        line-height: 1.4;
+        margin: 0 0 10px 0;
+    }
+    .paper-summary {
+        color: #475569;
+        font-size: 0.88em;
+        line-height: 1.6;
+        margin: 0 0 14px 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .paper-links {
+        display: flex;
+        gap: 14px;
+        font-size: 0.82em;
+        font-weight: 600;
+        color: #1976d2;
+        border-top: 1px solid #f0f4f8;
+        padding-top: 10px;
+    }
+    .paper-links span { opacity: 0.85; }
+    .paper-links span:hover { opacity: 1; text-decoration: underline; }
+    /* Keep old classes for backward compat */
+    .agent-message { color: #1a1a1a; }
+    .user-message  { color: #1a1a1a; }
+    .tool-message  { color: #1a1a1a; }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ─── Session State ───
+# Initialize session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "agent_process" not in st.session_state:
     st.session_state.agent_process = None
 if "agent_ready" not in st.session_state:
     st.session_state.agent_ready = False
-if "input_key" not in st.session_state:
-    st.session_state.input_key = 0
+if "current_papers" not in st.session_state:
+    st.session_state.current_papers = []
+if "stdout_queue" not in st.session_state:
+    st.session_state.stdout_queue = None
 
-
-# ─── Agent Functions ───
 def start_agent():
+    """Start the agent wrapper as a subprocess"""
     try:
         cwd = str(Path(__file__).parent)
         env = os.environ.copy()
+        # Propagate DARWIN_CONFIG so the wrapper uses the same provider as the UI
+        # e.g. DARWIN_CONFIG=config/agent_config_groq.json streamlit run ui_app.py
         process = subprocess.Popen(
             ["python", "agent_wrapper.py"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=1, cwd=cwd, env=env
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            cwd=cwd,
+            env=env
         )
-        for _ in range(80):
-            line = process.stdout.readline()
+
+        # Start a background reader so readline() never blocks the UI
+        q = queue.Queue()
+        t = threading.Thread(target=_reader_thread, args=(process.stdout, q), daemon=True)
+        t.start()
+        st.session_state.stdout_queue = q
+
+        # Wait for agent to be ready (MCP servers may take a few seconds to start)
+        deadline = time.time() + 30  # 30s should be plenty
+        while time.time() < deadline:
+            try:
+                line = q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
             if "AGENT_READY" in line:
                 st.session_state.agent_process = process
                 st.session_state.agent_ready = True
                 return True
-            time.sleep(0.1)
+        
         st.error("Agent failed to initialize")
         return False
     except Exception as e:
         st.error(f"Failed to start agent: {str(e)}")
         return False
 
-
-def extract_papers(text):
-    """Extract papers from numbered list format."""
+def extract_papers_from_response(text):
+    """Extract paper data from agent response"""
     papers = []
-    pattern = r'(\d+)\.\s+\[([^\]]+)\]\s+(.+?)\s+\((\d{4}-\d{2}-\d{2})\)\s*\n\s+(.+?)(?=\n\d+\.|$)'
-    for m in re.finditer(pattern, text, re.DOTALL):
-        paper_id = m.group(2).strip()
-        base_id = paper_id.split("v")[0]
+    
+    # Look for JSON-like structures in the response
+    json_pattern = r'\{\s*"id":\s*"([^"]+)".*?"title":\s*"([^"]+)".*?"summary":\s*"([^"]+)".*?\}'
+    matches = re.findall(json_pattern, text, re.DOTALL)
+    
+    for match in matches:
         papers.append({
-            "id": paper_id,
-            "title": m.group(3).strip(),
-            "published": m.group(4).strip(),
-            "summary": m.group(5).strip(),
-            "arxiv_url": f"https://arxiv.org/abs/{base_id}",
-            "pdf_url": f"https://arxiv.org/pdf/{base_id}",
+            "id": match[0],
+            "title": match[1][:100] + "..." if len(match[1]) > 100 else match[1],
+            "summary": match[2][:200] + "..." if len(match[2]) > 200 else match[2]
         })
+    
     return papers
 
-
-def send_command(command):
+def send_command_to_agent(command):
+    """Send a command to the agent and get the response"""
     try:
         process = st.session_state.agent_process
         if not process or process.poll() is not None:
-            return "Error: Agent not running. Please restart.", []
-
+            return "Error: Agent process not running", []
+        
+        # Send command
         process.stdin.write(command + "\n")
         process.stdin.flush()
 
-        lines = []
+        # Read response via the non-blocking queue
+        q = st.session_state.stdout_queue
+        response_lines = []
         papers = []
-        start = time.time()
-        while time.time() - start < 180:
-            line = process.stdout.readline()
-            if not line:
-                time.sleep(0.05)
+        timeout = 180
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                line = q.get(timeout=1.0)
+            except queue.Empty:
                 continue
+            if line is None:
+                break
+
             line = line.rstrip()
+            
+            # Parse structured output
             if line.startswith("AGENT_RESPONSE:"):
-                lines.append(("agent", line.replace("AGENT_RESPONSE:", "", 1)))
+                content = line.replace("AGENT_RESPONSE:", "", 1)
+                response_lines.append(("agent", content))
             elif line.startswith("PAPER_CARD:"):
+                # Structured paper data sent by agent_wrapper — render as UI cards
                 try:
                     paper = json.loads(line.replace("PAPER_CARD:", "", 1))
                     if "id" in paper and "title" in paper:
@@ -198,76 +206,47 @@ def send_command(command):
                 except Exception:
                     pass
             elif line.startswith("TOOL_EXECUTE:"):
-                lines.append(("tool", line.replace("TOOL_EXECUTE:", "", 1)))
+                content = line.replace("TOOL_EXECUTE:", "", 1)
+                response_lines.append(("tool", content))
             elif line.startswith("TOOL_ERROR:"):
-                lines.append(("error", line.replace("TOOL_ERROR:", "", 1)))
+                content = line.replace("TOOL_ERROR:", "", 1)
+                response_lines.append(("error", f"Error: {content}"))
             elif line.startswith("TOOL_CONFIRM:"):
+                # Auto-approve downloads from UI — send "yes" back to unblock agent
                 process.stdin.write("yes\n")
                 process.stdin.flush()
-                lines.append(("tool", "Download approved"))
+                response_lines.append(("tool", "Download approved"))
             elif line.startswith("TOOL_BLOCKED:"):
-                lines.append(("tool", "Blocked: " + line.replace("TOOL_BLOCKED:", "", 1)))
+                content = line.replace("TOOL_BLOCKED:", "", 1)
+                response_lines.append(("tool", f"Blocked: {content}"))
             elif line.startswith("ERROR:"):
-                lines.append(("error", line.replace("ERROR:", "", 1)))
+                content = line.replace("ERROR:", "", 1)
+                response_lines.append(("error", f"Error: {content}"))
                 break
-            elif "AGENT_END" in line or "AGENT_EXIT" in line:
+            elif line.startswith("AGENT_END"):
+                break  # Agent finished processing this command
+            elif line.startswith("AGENT_EXIT"):
                 break
 
-        # Build response — only agent lines for display
-        response = "\n".join(c for role, c in lines if role == "agent" and c.strip())
+        # Only include the LLM's actual reply — tool activity stays out of the
+        # response text so it doesn't look like command-line output.
+        final_response = "\n".join(
+            content for role, content in response_lines
+            if role == "agent" and content.strip()
+        )
 
-        # Extract papers from numbered list if no PAPER_CARD data
-        if not papers:
-            full_text = "\n".join(c for _, c in lines if c.strip())
-            papers = extract_papers(full_text)
-
-        return response if response else "Done.", papers
+        return final_response.strip() if final_response.strip() else "Processing...", papers
+    
     except Exception as e:
         return f"Error: {str(e)}", []
 
+# Header
+st.markdown("# Darwin Research Agent")
 
-def render_paper_cards(papers):
-    """Render paper cards with clickable links."""
-    st.markdown(f"#### 📄 {len(papers)} Papers Found")
-    for paper in papers:
-        arxiv_url = paper.get("arxiv_url", "")
-        pdf_url = paper.get("pdf_url", "")
-        meta_parts = [
-            paper.get("id", ""),
-            paper.get("published", ""),
-            paper.get("authors", ""),
-        ]
-        meta = " · ".join(p for p in meta_parts if p)
-
-        links = []
-        if arxiv_url:
-            links.append(f'<a href="{arxiv_url}" target="_blank">Abstract</a>')
-        if pdf_url:
-            links.append(f'<a href="{pdf_url}" target="_blank">PDF</a>')
-        links_html = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(links)
-
-        title_html = paper.get("title", "Untitled")
-        if arxiv_url:
-            title_html = f'<a href="{arxiv_url}" target="_blank">{title_html}</a>'
-
-        st.markdown(f"""
-        <div class="paper-card">
-            <div class="paper-meta">{meta}</div>
-            <div class="paper-title">{title_html}</div>
-            <div class="paper-summary">{paper.get("summary", "")}</div>
-            <div class="paper-links">{links_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-
-# ─── Header ───
-st.markdown("# 🧬 Darwin Research Agent")
-
-
-# ─── Sidebar ───
+# Sidebar
 with st.sidebar:
-    st.markdown("### ⚙️ Agent Control")
-
+    st.title("Agent Control")
+    
     if not st.session_state.agent_ready:
         if st.button("🔌 Start Agent", use_container_width=True):
             with st.spinner("Starting agent..."):
@@ -275,88 +254,67 @@ with st.sidebar:
                     st.success("Agent started!")
                     st.rerun()
     else:
-        st.success("✅ Agent Running")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🔄 Restart", use_container_width=True):
-                if st.session_state.agent_process:
-                    st.session_state.agent_process.terminate()
-                    st.session_state.agent_ready = False
-                    time.sleep(0.5)
-                with st.spinner("Restarting..."):
-                    if start_agent():
-                        st.rerun()
-        with c2:
-            if st.button("🛑 Stop", use_container_width=True):
-                if st.session_state.agent_process:
-                    st.session_state.agent_process.terminate()
-                    st.session_state.agent_ready = False
-                    st.session_state.agent_process = None
-                st.rerun()
+        st.success("Agent Running")
 
+        if st.button("Stop Agent", use_container_width=True):
+            if st.session_state.agent_process:
+                st.session_state.agent_process.terminate()
+                st.session_state.agent_ready = False
+            st.rerun()
+    
     st.divider()
-
-    # Stats
-    papers_dir = Path("papers")
-    pdf_count = len(list(papers_dir.glob("*.pdf"))) if papers_dir.exists() else 0
-    notes_dir = Path("Darwin Research/Research/Incoming")
-    notes_count = len(list(notes_dir.glob("*.md"))) if notes_dir.exists() else 0
-
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-row"><span class="stat-label">📄 Papers</span><span class="stat-val">{pdf_count}</span></div>
-        <div class="stat-row"><span class="stat-label">📝 Notes</span><span class="stat-val">{notes_count}</span></div>
-        <div class="stat-row"><span class="stat-label">💬 Messages</span><span class="stat-val">{len(st.session_state.chat_history)}</span></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.divider()
-
+    
     # Quick commands
-    st.markdown("**Quick Commands:**")
+    st.write("**Quick Commands:**")
+    
     quick_commands = [
-        ("🔍 Search Papers", "search papers on machine learning"),
-        ("📋 List Papers", "list papers"),
-        ("📥 Download Paper", "download paper 2306.04338v1"),
-        ("📖 Read Paper", "read paper 2306.04338v1"),
-        ("📝 Create Note", "create a research note about deep learning for Obsidian"),
+        ("Search Papers", "search papers on machine learning"),
+        ("List Papers", "list papers"),
+        ("Download Paper", "download paper 2306.04338v1"),
+        ("Read Paper", "read paper 2306.04338v1"),
+        ("Create Note", "create a research note about deep learning for Obsidian"),
     ]
+    
     for label, cmd in quick_commands:
         if st.button(label, use_container_width=True, key=f"quick_{label}"):
             st.session_state.quick_cmd = cmd
-
+    
     st.divider()
-
-    with st.expander("📋 Downloaded Papers"):
-        if papers_dir.exists():
-            pl = sorted(papers_dir.glob("*.pdf"))
-            for p in pl:
-                st.text(f"📄 {p.name}")
-            if not pl:
+    
+    with st.expander("Downloaded Papers"):
+        papers_path = Path("papers")
+        if papers_path.exists():
+            papers = list(papers_path.glob("*.pdf"))
+            if papers:
+                for p in papers:
+                    st.text(p.name)
+                st.caption(f"Total: {len(papers)}")
+            else:
                 st.caption("No papers downloaded yet")
 
-    with st.expander("📚 Obsidian Notes"):
-        if notes_dir.exists():
-            nl = sorted(notes_dir.glob("*.md"))
-            for n in nl:
-                st.text(f"📝 {n.name}")
-            if not nl:
+    with st.expander("Obsidian Notes"):
+        notes_path = Path("Darwin Research/Research/Incoming")
+        if notes_path.exists():
+            notes = list(notes_path.glob("*.md"))
+            if notes:
+                for n in notes:
+                    st.text(n.name)
+                st.caption(f"Total: {len(notes)}")
+            else:
                 st.caption("No notes created yet")
 
-    st.divider()
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.chat_history = []
-        st.rerun()
+# Increment this key to clear the text_input after each submission
+if "input_key" not in st.session_state:
+    st.session_state.input_key = 0
 
-
-# ─── Main Area ───
+# Main chat area
 if not st.session_state.agent_ready:
-    st.info("👈 Click **'Start Agent'** in the sidebar to begin")
+    st.info("Click **'Start Agent'** in the sidebar to begin")
 else:
-    # Input at the top
+    # ── Input at the top ──────────────────────────────────────────────────────
     col1, col2 = st.columns([5, 1])
     with col1:
-        if "quick_cmd" in st.session_state and st.session_state.quick_cmd:
+        if "quick_cmd" in st.session_state:
             user_input = st.session_state.quick_cmd
             st.session_state.quick_cmd = None
             should_send = True
@@ -369,51 +327,77 @@ else:
             )
             should_send = False
     with col2:
-        send_button = st.button("📤 Send", use_container_width=True)
+        send_button = st.button("Send", use_container_width=True)
 
     if (send_button or should_send) and user_input:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
-        with st.spinner("Darwin is thinking..."):
-            response, papers = send_command(user_input)
+        with st.spinner("Thinking..."):
+            response, papers = send_command_to_agent(user_input)
             st.session_state.chat_history.append({
                 "role": "agent",
                 "content": response,
                 "papers": papers,
             })
+        # Increment key → text_input renders fresh and empty on next run
         st.session_state.input_key += 1
         st.rerun()
 
     st.divider()
 
-    # Chat history
+    # ── Chat history ──────────────────────────────────────────────────────────
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
             with st.chat_message("user"):
-                st.markdown(msg["content"])
+                st.markdown(msg['content'])
         elif msg["role"] == "agent":
             with st.chat_message("assistant"):
                 if msg.get("papers"):
-                    # Show intro line only, skip the full paper list text
-                    text_lines = [l for l in msg["content"].splitlines() if l.strip()]
+                    # When cards are shown, only display the agent's intro sentence —
+                    # not the full formatted paper list which would duplicate the cards.
+                    lines = [l for l in msg['content'].splitlines() if l.strip()]
                     intro = next(
-                        (l for l in text_lines
-                         if not l.startswith("#") and not l.startswith("**")
-                         and not l.startswith("-") and not l.startswith("Found")),
+                        (l for l in lines if not l.startswith("#") and not l.startswith("**") and not l.startswith("-")),
                         ""
                     )
                     if intro:
                         st.markdown(intro)
-                    render_paper_cards(msg["papers"])
+
+                    st.markdown(f"#### {len(msg['papers'])} Papers Found")
+                    for paper in msg["papers"]:
+                        arxiv_url = paper.get("arxiv_url", "")
+                        pdf_url   = paper.get("pdf_url", "")
+                        meta = " · ".join(filter(None, [
+                            paper.get("id", ""),
+                            paper.get("published", ""),
+                            paper.get("authors", ""),
+                        ]))
+                        # Use proper <a> tags — no nested anchors so Abstract goes to
+                        # the abstract page and PDF goes to the actual PDF file.
+                        abstract_link = f'<a href="{arxiv_url}" target="_blank">Abstract</a>' if arxiv_url else ""
+                        pdf_link      = f'<a href="{pdf_url}"   target="_blank">PDF</a>'      if pdf_url   else ""
+                        links_html    = "&nbsp;&nbsp;|&nbsp;&nbsp;".join(filter(None, [abstract_link, pdf_link]))
+                        st.markdown(f"""
+                        <div class="paper-card">
+                            <div class="paper-meta">{meta}</div>
+                            <div class="paper-title">
+                                <a href="{arxiv_url or '#'}" target="_blank" style="color:inherit;text-decoration:none;">
+                                    {paper.get("title", "")}
+                                </a>
+                            </div>
+                            <div class="paper-summary">{paper.get("summary", "")}</div>
+                            <div class="paper-links">{links_html}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
-                    st.markdown(msg["content"])
+                    # Non-search responses: render the full LLM reply as markdown
+                    st.markdown(msg['content'])
         elif msg["role"] == "error":
-            st.error(msg["content"])
+            st.error(msg['content'])
 
-
-# ─── Footer ───
+# Footer
 st.divider()
 st.markdown("""
-### 📖 Available Commands
+### Available Commands
 
 **Search & Browse:**
 - `search papers on machine learning` - Find papers on a topic
@@ -428,9 +412,4 @@ st.markdown("""
 - `create a research note about AI for Obsidian`
 - `create a research note for paper 2306.04338v1 about deep learning for Obsidian`
 """)
-
-st.markdown("""
-<div class="foot">
-    <strong>Darwin Research Agent</strong> · Powered by ArXiv, Ollama & MCP · Built with Streamlit
-</div>
-""", unsafe_allow_html=True)
+st.markdown("**Darwin Research Agent** | Powered by ArXiv, Ollama, and MCP | Built with Streamlit")

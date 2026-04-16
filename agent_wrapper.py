@@ -159,11 +159,7 @@ async def main():
                 tool_calls = message.get("tool_calls", [])
 
                 if content:
-                    # Prefix every line so the UI's readline() loop captures all of them.
-                    # A bare print(f"AGENT_RESPONSE:{content}") drops everything after
-                    # the first newline because the UI reads one line at a time.
-                    for line in content.splitlines():
-                        print(f"AGENT_RESPONSE:{line}", flush=True)
+                    print(f"AGENT_RESPONSE:{content}", flush=True)
 
                 if not tool_calls:
                     # No tool calls — content is the final response for this turn
@@ -233,13 +229,12 @@ async def main():
                             result_str = _extract_result_text(result)
                             print(f"TOOL_EXECUTE:{name}:{result_str[:100]}", flush=True)
 
-                            # For search results, send each paper as structured JSON
-                            # using the PAPER_CARD: prefix so the UI renders them as
-                            # cards (not mixed into the text response).
+                            # For search results, emit structured PAPER_CARD JSON
+                            # so the UI can render clickable paper cards.
                             if name == "search_papers":
                                 try:
-                                    search_results = json.loads(result_str)
-                                    actual = [p for p in search_results if not p.get("error")]
+                                    papers = json.loads(result_str)
+                                    actual = [p for p in papers if not p.get("error")]
                                     for p in actual:
                                         card = json.dumps({
                                             "id": p.get("id", ""),
