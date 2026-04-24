@@ -44,71 +44,104 @@ All three MCP servers run locally as stdio processes. The agent orchestrates too
 
 ## Quick Start
 
-### Prerequisites
+Two install paths. Pick one.
 
-- **Python 3.10+**
-- **Ollama** ([install](https://ollama.com/download))
-- **Obsidian** (optional, for note management)
+### Option A — Docker (recommended, zero host changes)
 
-### 1. Clone & Install
+Tested on Ubuntu 24.04. Requires only Docker.
+
+```bash
+# One-time Docker setup
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2
+sudo usermod -aG docker "$USER"   # log out and back in so group membership applies
+
+# Clone and start
+git clone https://github.com/MohammadAmmargk8497/Darwin.git
+cd Darwin
+./scripts/docker-run.sh
+```
+
+The script builds the image, starts an Ollama service and the Darwin UI, and
+pulls the default model (`llama3.2:3b`, ~2 GB). On a warm cache subsequent
+starts take seconds.
+
+Open http://localhost:8501.
+
+Watch progress during the first model pull:
+
+```bash
+docker compose logs -f darwin
+```
+
+Stop everything:
+
+```bash
+docker compose down        # data preserved
+docker compose down -v     # also drop the pulled-model volume
+```
+
+Your downloaded papers (`papers/`), Obsidian vault (`Darwin Research/`), and
+logs (`logs/`) live on the host, bind-mounted into the container — edit them
+with any tool and the agent sees the changes.
+
+### Option B — Native Ubuntu install
+
+Two commands. No Docker required.
 
 ```bash
 git clone https://github.com/MohammadAmmargk8497/Darwin.git
 cd Darwin
+./scripts/install.sh    # installs Python deps, Ollama, pulls the model, seeds dirs
+./scripts/run.sh        # starts Ollama (if needed) and the Streamlit UI
+```
+
+Open http://localhost:8501.
+
+If something looks off:
+
+```bash
+./scripts/doctor.sh     # diagnoses what's missing
+./scripts/stop.sh       # stops Streamlit (leaves the systemd ollama alone)
+```
+
+### Option C — Manual pip install
+
+For non-Debian systems or when you want full control:
+
+```bash
+git clone https://github.com/MohammadAmmargk8497/Darwin.git
+cd Darwin
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# or
-poetry install
-```
 
-**Key dependencies:**
-| Package | Purpose |
-|---------|---------|
-| `fastmcp` | MCP server framework |
-| `mcp` | MCP client protocol |
-| `arxiv` | arXiv API client |
-| `pymupdf` | PDF text extraction |
-| `ollama` | Local LLM client |
-| `openai` | OpenAI-compatible API client |
-| `httpx` | Async HTTP |
-| `streamlit` | Web UI |
-| `loguru` | Logging |
-
-### 2. Start Ollama
-
-```bash
-ollama serve
+# You also need Ollama:
+#   Linux/macOS: curl -fsSL https://ollama.com/install.sh | sh
+#   other:       https://ollama.com/download
 ollama pull llama3.2:3b
+ollama serve &
+
+streamlit run ui_app.py       # UI
+# or: python -m src.agent.main   # CLI
 ```
 
-> For GPUs with limited VRAM (e.g. GTX 1650 4GB), set `GGML_CUDA_FORCE_MMQ=1` before starting Ollama.
+### Configuration
 
-### 3. Configure
+All settings live in `.env` (gitignored) or `config/agent_config.json`.
+Environment variables always win over JSON.
 
-Edit `config/agent_config.json`:
-
-```json
-{
-    "provider": "ollama",
-    "model_name": "llama3.2:3b",
-    "api_base": "http://localhost:11434",
-    "temperature": 0.7,
-    "system_prompt": "..."
-}
-```
-
-MCP server paths are in `config/claude_desktop_config.json` — uses `${PROJECT_ROOT}` for portability.
-
-### 4. Run
+Common overrides:
 
 ```bash
-# Web UI (recommended)
-streamlit run ui_app.py
-
-# CLI mode
-python src/agent/main.py
+# .env
+MODEL_NAME=llama3.2:3b
+PROVIDER=ollama
+API_BASE=http://localhost:11434
+OPENAI_API_KEY=...                          # only if PROVIDER=openai
+OBSIDIAN_VAULT_PATH=/path/to/my/vault       # if you want a vault outside the repo
 ```
 
-Click **"Start Agent"** in the sidebar, then type your query.
+See `.env.example` for the full list.
 
 ---
 
@@ -148,34 +181,46 @@ The system automatically:
 ```
 Darwin/
 ├── config/
-│   ├── agent_config.json              # LLM provider, model, system prompt
-│   ├── claude_desktop_config.json     # MCP server definitions
-│   └── obsidian_config.json           # Obsidian vault settings
+│   ├── agent_config.json              LLM provider, model, system prompt
+│   └── claude_desktop_config.json     MCP server definitions
 │
 ├── src/
-│   ├── agent/
-│   │   ├── main.py                    # CLI agent orchestrator
-│   │   ├── mcp_client.py             # MCP connection manager
-│   │   ├── ollama_client.py          # Ollama LLM wrapper
-│   │   └── openai_client.py          # OpenAI-compatible wrapper
-│   │
-│   ├── arxiv_server/
-│   │   └── server.py                  # ArXiv search, download, read
-│   │
-│   ├── pdf_parser/
-│   │   └── server.py                  # PDF section & figure extraction
-│   │
-│   └── obsidian_server/
-│       └── server.py                  # Note creation & vault management
+│   ├── common/                        Shared: settings, exceptions, vault I/O,
+│   │                                  PDF sections, rate limiter, logging
+│   ├── agent/                         LLM clients + MCP client + CLI entry
+│   ├── arxiv_server/                  arXiv search / download / read
+│   ├── pdf_parser/                    PDF section & figure extraction
+│   └── obsidian_server/               Note creation, vault search
 │
-├── ui_app.py                          # Streamlit web interface
-├── agent_wrapper.py                   # Subprocess bridge for UI
-├── evaluate_system.py                 # End-to-end evaluation suite
-├── evaluate_search.py                 # Search quality benchmarks
-├── papers/                            # Downloaded PDFs (local cache)
-├── Darwin Research/                   # Obsidian vault
-│   └── Research/Incoming/             # Default note folder
-├── pyproject.toml                     # Project dependencies
+├── tests/                             pytest unit tests (run: make test)
+│
+├── scripts/
+│   ├── install.sh                     Native Ubuntu installer
+│   ├── run.sh                         Start UI + Ollama
+│   ├── stop.sh                        Stop UI + foreground Ollama
+│   ├── doctor.sh                      Environment diagnostics
+│   └── docker-run.sh                  One-command Docker startup
+│
+├── docker/
+│   └── entrypoint.sh                  Wait-for-Ollama + model pull
+│
+├── Dockerfile                         Multi-stage image (Python 3.12 slim)
+├── docker-compose.yml                 Ollama + Darwin services
+│
+├── ui_app.py                          Streamlit web interface
+├── agent_wrapper.py                   Subprocess bridge for UI
+├── evaluate_system.py                 End-to-end evaluation suite
+├── evaluate_search.py                 Search quality benchmarks
+│
+├── papers/                            Downloaded PDFs (host-bind-mounted)
+├── Darwin Research/                   Obsidian vault (host-bind-mounted)
+│   └── Research/Incoming/             Default note folder
+├── logs/                              Runtime logs (host-bind-mounted)
+│
+├── .env.example                       Config template — copy to .env
+├── Makefile                           install / test / lint / typecheck
+├── pyproject.toml                     Project deps (Poetry)
+├── requirements.txt                   Pip-compatible deps (used by Docker)
 └── README.md
 ```
 

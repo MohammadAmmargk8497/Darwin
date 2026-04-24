@@ -1,28 +1,62 @@
 [tool.poetry]
-name = "research-agent"
-version = "0.1.0"
-description = "A privacy-focused research agent using MCP."
-authors = ["Ammar <ammar@example.com>"]
+name = "darwin-research-agent"
+version = "0.2.0"
+description = "A privacy-focused research agent using MCP, Ollama, and arXiv."
+authors = ["Ammar <ammar.m@northeastern.edu>"]
 readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+# MCP protocol
 mcp = "^1.0.0"
 fastmcp = "^0.1.0"
-requests = "^2.31.0"
-beautifulsoup4 = "^4.12.0"
-# arxiv = "^2.1.0" # Assuming there's a python wrapper, or we use direct API
-pymupdf = "^1.23.0" # fitz
-pypdf2 = "^3.0.0"
-ollama = "^0.4.0"
-uv = "^0.1.0" # For fast package management if needed by sub-tools
+# arXiv + PDF
 arxiv = "^2.4.0"
+pymupdf = "^1.23.0"
+# LLM clients
+ollama = "^0.4.0"
+openai = "^1.40.0"
+# HTTP / networking
 httpx = "^0.28.1"
+requests = "^2.31.0"
+# Logging, config, resilience
+loguru = "^0.7.2"
+pydantic = "^2.6.0"
+pydantic-settings = "^2.2.0"
+python-dotenv = "^1.0.0"
+tenacity = "^8.2.3"
+pyyaml = "^6.0.1"
+# UI
+streamlit = "^1.30.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+ruff = "^0.5.0"
+mypy = "^1.10.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_return_any = false
+check_untyped_defs = true

@@ -52,42 +52,45 @@ def convert_tool_arguments(args: dict, tool_definitions: list, tool_name: str) -
     return converted
 
 async def run_agent():
-    # 1. Load Config
-    try:
-        config_path = os.environ.get("DARWIN_CONFIG", "config/agent_config.json")
-        with open(config_path, "r") as f:
-            agent_config = json.load(f)
-    except FileNotFoundError:
-        print("config/agent_config.json not found. Using defaults.")
-        agent_config = {"model_name": "llama3.1", "api_base": "http://localhost:11434"}
+    # 1. Load Config via load_settings so env vars (e.g. from docker-compose)
+    #    override the JSON defaults.
+    from src.common.settings import load_settings
+    settings = load_settings()
+
+    provider = settings.provider.lower()
+    api_base = settings.api_base
+    model_name = settings.model_name
+    system_prompt = settings.system_prompt
+    agent_config = {"system_prompt": system_prompt}  # used later to seed history
+
+    # If the operator flipped provider to openai but didn't set an explicit
+    # api_base, swap in the OpenAI default.
+    if provider == "openai" and api_base == "http://localhost:11434":
+        api_base = "https://api.openai.com/v1"
 
     # 2. Initialize Clients based on provider
-    provider = agent_config.get("provider", "ollama").lower()
-    
     if provider == "openai":
-        # OpenAI or compatible API
-        api_key = agent_config.get("api_key") or os.environ.get("OPENAI_API_KEY")
+        api_key = settings.openai_api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            print(f"{RED}Error: OpenAI API key not found. Set 'api_key' in config or OPENAI_API_KEY env var.{RESET}")
+            print(f"{RED}Error: OpenAI API key not found. Set OPENAI_API_KEY or api_key in config.{RESET}")
             return
-        
+
         llm_client = OpenAIClient(
-            model_name=agent_config.get("model_name", "gpt-4"),
+            model_name=model_name,
             api_key=api_key,
-            base_url=agent_config.get("api_base", "https://api.openai.com/v1"),
-            system_prompt=agent_config.get("system_prompt", "")
+            base_url=api_base,
+            system_prompt=system_prompt,
         )
-        print(f"{GREEN}Using OpenAI API with model: {agent_config.get('model_name', 'gpt-4')}{RESET}")
-    
+        print(f"{GREEN}Using OpenAI API with model: {model_name}{RESET}")
+
     elif provider == "ollama":
-        # Local Ollama
         llm_client = OllamaClient(
-            model_name=agent_config.get("model_name", "llama3.1"),
-            host=agent_config.get("api_base", "http://localhost:11434"),
-            system_prompt=agent_config.get("system_prompt", "")
+            model_name=model_name,
+            host=api_base,
+            system_prompt=system_prompt,
         )
-        print(f"{GREEN}Using Ollama with model: {agent_config.get('model_name', 'llama3.1')}{RESET}")
-    
+        print(f"{GREEN}Using Ollama ({api_base}) with model: {model_name}{RESET}")
+
     else:
         print(f"{RED}Unknown provider: {provider}. Use 'ollama' or 'openai'{RESET}")
         return

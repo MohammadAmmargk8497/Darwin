@@ -4,10 +4,7 @@
             "command": "python",
             "args": [
                 "${PROJECT_ROOT}/src/arxiv_server/server.py"
-            ],
-            "env": {
-                "PAPER_STORAGE": "${PROJECT_ROOT}/papers"
-            }
+            ]
         },
         "pdf_tools": {
             "command": "python",
@@ -19,13 +16,7 @@
             "command": "python",
             "args": [
                 "${PROJECT_ROOT}/src/obsidian_server/server.py"
-            ],
-            "env": {
-                "OBSIDIAN_API_KEY": "aa910b265c71eea1ef50ac65eec6b7bbb77aec3e0b462dc68cbe4559675ec769",
-                "OBSIDIAN_PORT": "27123",
-                "DEFAULT_FOLDER": "Research/Incoming",
-                "OBSIDIAN_VAULT_PATH": "${PROJECT_ROOT}/Darwin Research"
-            }
+            ]
         }
     }
 }

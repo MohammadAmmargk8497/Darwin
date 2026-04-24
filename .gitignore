@@ -138,6 +138,14 @@ _eval_vault/
 eval_output.txt
 eval_results_*.csv
 
+# Darwin runtime artefacts
+logs/
+research_log.db
+
+# Reference PDFs kept alongside the repo but not part of the codebase —
+# GitHub rejects files over 100 MB, so don't track top-level PDFs.
+/*.pdf
+
 # LaTeX build artifacts
 *.aux
 *.toc

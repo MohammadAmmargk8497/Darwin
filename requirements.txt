@@ -1,0 +1,30 @@
+# Darwin runtime dependencies — pinned to compatible floors so pip users
+# and the Docker image install a coherent stack. Keep in sync with
+# pyproject.toml.
+
+# MCP protocol
+mcp>=1.0.0,<2.0.0
+fastmcp>=0.1.0
+
+# arXiv + PDFs
+arxiv>=2.4.0
+pymupdf>=1.23.0
+
+# LLM clients
+ollama>=0.4.0
+openai>=1.40.0
+
+# HTTP + networking
+httpx>=0.28.1
+requests>=2.31.0
+
+# Config, logging, resilience
+loguru>=0.7.2
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+tenacity>=8.2.3
+pyyaml>=6.0.1
+
+# UI
+streamlit>=1.30.0

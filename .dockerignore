@@ -1,0 +1,51 @@
+# Keep the build context small and reproducible.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+env
+.python-version
+
+# Caches
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+
+# Editors
+.vscode
+.idea
+.DS_Store
+
+# Claude Code
+.claude
+
+# Runtime artefacts — these live on the host, not in the image
+papers
+logs
+research_log.db
+Darwin Research/.obsidian
+Darwin Research/.trash
+
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+
+# Large docs that don't belong in the image
+*.pdf
+Project_Progress_Report*
+legacy
+
+# CI and platform noise
+.github

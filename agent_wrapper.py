@@ -78,33 +78,105 @@ def _extract_result_text(result) -> str:
     return str(result)
 
 
+def _health_check_llm(provider: str, api_base: str, model_name: str) -> None:
+    """Ping the LLM backend; emit STARTUP_WARNING: lines that the UI can surface.
+
+    Does not raise — a missing backend shouldn't prevent the agent process
+    from starting. The UI shows the warning in its log pane so the user can
+    fix it (e.g. run ``ollama serve``) without restarting the whole stack.
+    """
+    try:
+        import httpx
+    except ImportError:
+        return
+    try:
+        if provider == "ollama":
+            r = httpx.get(f"{api_base.rstrip('/')}/api/tags", timeout=3.0)
+            if r.status_code != 200:
+                print(
+                    f"STARTUP_WARNING:Ollama at {api_base} returned HTTP {r.status_code}. "
+                    f"Run 'ollama serve' in another terminal.",
+                    flush=True,
+                )
+                return
+            # Verify the requested model is pulled
+            try:
+                tags = r.json().get("models", [])
+                names = {m.get("name", "").split(":")[0] for m in tags}
+                wanted = model_name.split(":")[0]
+                if wanted and wanted not in names:
+                    print(
+                        f"STARTUP_WARNING:Ollama is up but model '{model_name}' is not pulled. "
+                        f"Run 'ollama pull {model_name}'.",
+                        flush=True,
+                    )
+            except Exception:
+                pass  # non-fatal; model list parse is best-effort
+        elif provider == "openai":
+            # Just verify the base URL responds; we can't auth-check without burning a request
+            host = api_base.rstrip("/")
+            r = httpx.get(host, timeout=3.0)
+            if r.status_code >= 500:
+                print(
+                    f"STARTUP_WARNING:LLM endpoint {host} returned HTTP {r.status_code}.",
+                    flush=True,
+                )
+    except httpx.ConnectError as e:
+        print(
+            f"STARTUP_WARNING:LLM backend not reachable at {api_base} ({e}). "
+            f"For Ollama: run 'ollama serve' and 'ollama pull {model_name}' in another terminal.",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"STARTUP_WARNING:LLM health check failed: {e}", flush=True)
+
+
 async def main():
     """Main agent loop"""
-    # Load config — DARWIN_CONFIG env var overrides the default path
-    config_path = os.environ.get("DARWIN_CONFIG", "config/agent_config.json")
-    try:
-        with open(config_path, "r") as f:
-            agent_config = json.load(f)
-    except FileNotFoundError:
-        agent_config = {"model_name": "llama3.1", "api_base": "http://localhost:11434"}
+    # All config flows through load_settings so env vars (e.g. from docker-compose)
+    # override the JSON defaults — that's how containerised deployments point
+    # the agent at `http://ollama:11434` without editing any files.
+    from src.common.settings import load_settings
+    settings = load_settings()
 
-    # Initialize the right client based on provider
-    provider = agent_config.get("provider", "ollama").lower()
+    provider = settings.provider.lower()
+    api_base = settings.api_base
+    model_name = settings.model_name
+    system_prompt = settings.system_prompt
+
+    # The settings default api_base is the Ollama URL. If the operator flipped
+    # provider to openai but didn't set an explicit api_base, swap in the
+    # OpenAI default so they don't get a confusing connection error.
+    if provider == "openai" and api_base == "http://localhost:11434":
+        api_base = "https://api.openai.com/v1"
+
     if provider == "openai":
         llm_client = OpenAIClient(
-            model_name=agent_config.get("model_name", "gpt-4"),
-            api_key=agent_config.get("api_key") or os.environ.get("OPENAI_API_KEY", ""),
-            base_url=agent_config.get("api_base", "https://api.openai.com/v1"),
-            system_prompt=agent_config.get("system_prompt", "")
+            model_name=model_name,
+            api_key=settings.openai_api_key or os.environ.get("OPENAI_API_KEY", ""),
+            base_url=api_base,
+            system_prompt=system_prompt,
         )
     else:
         llm_client = OllamaClient(
-            model_name=agent_config.get("model_name", "llama3.1"),
-            host=agent_config.get("api_base", "http://localhost:11434"),
-            system_prompt=agent_config.get("system_prompt", "")
+            model_name=model_name,
+            host=api_base,
+            system_prompt=system_prompt,
         )
-    ollama = llm_client  # keep existing variable name so the rest of the file is unchanged
-    
+
+    # Keep a plain dict around too so the rest of this function (which was
+    # written against the old config-loading style) keeps working unchanged.
+    agent_config = {
+        "provider": provider,
+        "api_base": api_base,
+        "model_name": model_name,
+        "system_prompt": system_prompt,
+    }
+
+    # Health-check the LLM so the user sees a clear warning in the UI log
+    # instead of the agent silently hanging on the first request.
+    _health_check_llm(provider, api_base, model_name)
+
     mcp_client = MCPClient(config_path="config/claude_desktop_config.json")
     approved_papers = set()
 
@@ -136,8 +208,10 @@ async def main():
 
             # Agent turn loop
             while True:
-                # Ollama can throw transient 500s during model reload — retry a few times.
-                # OpenAI/Groq errors are not transient so we don't retry there.
+                # Ollama can throw transient 500s during model reload — retry a
+                # couple of times with a short sleep and a visible heartbeat so
+                # the UI doesn't look like it's hung. OpenAI/Groq errors are
+                # not transient so we skip retry there.
                 if provider == "ollama":
                     import time as _time
                     for attempt in range(3):
@@ -145,13 +219,20 @@ async def main():
                         if "error" not in response:
                             break
                         if attempt < 2:
-                            print(f"TOOL_EXECUTE:retrying after Ollama error (attempt {attempt+1})", flush=True)
-                            _time.sleep(20)
+                            print(
+                                f"TOOL_EXECUTE:LLM error — retrying ({attempt + 1}/3) "
+                                f"— {response.get('error', '')[:120]}",
+                                flush=True,
+                            )
+                            _time.sleep(2)
                 else:
                     response = llm_client.chat(messages, tools=tools)
 
                 if "error" in response:
-                    print(f"ERROR: {response['error']}", flush=True)
+                    # Emit the actual LLM error so the UI can display it. The
+                    # older code only broke out, leaving the UI to time out at
+                    # 180s with a generic "Processing..." placeholder.
+                    print(f"ERROR:{response['error']}", flush=True)
                     break
 
                 message = response.get("message", {})
