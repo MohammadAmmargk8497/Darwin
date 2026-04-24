@@ -1,0 +1,20 @@
+# GPU passthrough override.
+#
+# Merged on top of docker-compose.yml by scripts/docker-run.sh when an
+# NVIDIA GPU and nvidia-container-toolkit are both detected on the host.
+# Ollama auto-detects the GPU inside the container and uses it.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility

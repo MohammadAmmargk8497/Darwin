@@ -62,23 +62,26 @@ cd Darwin
 ./scripts/docker-run.sh
 ```
 
-The script builds the image, starts an Ollama service and the Darwin UI, and
-pulls the default model (`llama3.2:3b`, ~2 GB). On a warm cache subsequent
-starts take seconds.
+The script builds the image and starts Ollama + the Darwin UI. It:
 
-Open http://localhost:8501.
+- **Auto-detects an NVIDIA GPU** (`nvidia-smi`) and `nvidia-container-toolkit`,
+  and wires GPU passthrough to the Ollama container if both are present.
+- **Picks an Ollama model sized for your VRAM**:
+  - no GPU / small GPU → `llama3.2:3b` (~2 GB)
+  - 8–22 GB VRAM → `llama3.1:8b` (~5 GB)
+  - 22+ GB VRAM → `qwen2.5:14b` (~9 GB)
+  Override anytime with `MODEL_NAME=... ./scripts/docker-run.sh`.
+- **Streams logs in the foreground** and auto-shuts-down both containers when
+  you Ctrl-C or close the terminal. Pass `--detach` to keep it running after
+  the shell returns.
 
-Watch progress during the first model pull:
+Open http://localhost:8501. The first run pulls the model into a Docker
+volume — subsequent starts take seconds.
 
 ```bash
-docker compose logs -f darwin
-```
-
-Stop everything:
-
-```bash
-docker compose down        # data preserved
-docker compose down -v     # also drop the pulled-model volume
+./scripts/docker-run.sh              # foreground, auto-shutdown on exit
+./scripts/docker-run.sh --detach     # keep running; stop with `docker compose down`
+docker compose down -v               # drop the pulled-model volume too
 ```
 
 Your downloaded papers (`papers/`), Obsidian vault (`Darwin Research/`), and
