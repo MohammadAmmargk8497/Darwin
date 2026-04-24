@@ -103,6 +103,102 @@ EOF
 
 check_docker_credentials
 
+# If the user followed the native-install path first (./scripts/install.sh),
+# a systemd Ollama is already on port 11434 and Docker's Ollama container
+# can't bind the same port. Detect and offer to stop it.
+check_port_conflict() {
+    local port=11434
+    local in_use=false
+
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn "sport = :$port" 2>/dev/null | grep -q ":$port" && in_use=true
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 && in_use=true
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tln 2>/dev/null | grep -qE "[:.]$port[[:space:]]" && in_use=true
+    fi
+
+    $in_use || return 0
+
+    # If port is bound by our own compose stack, there's nothing to do —
+    # `compose up -d` will be a no-op for running services.
+    if command -v docker >/dev/null 2>&1 && \
+       docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'darwin-ollama'; then
+        printf "[info] darwin-ollama is already running — compose will reuse it.\n"
+        return 0
+    fi
+
+    # Is the listener an Ollama server?
+    if ! curl -fsS "http://127.0.0.1:$port/api/tags" >/dev/null 2>&1; then
+        printf "[error] Port %s is in use by a non-Ollama service.\n" "$port" >&2
+        printf "        Stop whatever is using it and re-run this script.\n" >&2
+        exit 1
+    fi
+
+    cat <<EOF
+[warn] Port $port is already bound by a native Ollama running on this
+       machine (likely from ./scripts/install.sh). Docker's Ollama
+       container can't bind the same port.
+EOF
+
+    if [ ! -t 0 ]; then
+        cat <<EOF
+[error] Stdin is not a terminal — not prompting.
+        Stop the native Ollama and retry, e.g.:
+            sudo systemctl stop ollama
+EOF
+        exit 1
+    fi
+
+    printf "Stop the native Ollama now and continue with Docker? [Y/n] "
+    read -r reply
+    reply="${reply:-Y}"
+    case "$reply" in
+        [Yy]*) ;;
+        *)
+            printf "[error] Aborted. Stop Ollama yourself and re-run.\n" >&2
+            exit 1
+            ;;
+    esac
+
+    local stopped=false
+    if command -v systemctl >/dev/null 2>&1 && \
+       systemctl is-active --quiet ollama 2>/dev/null; then
+        printf "[info] Stopping ollama.service via systemctl (sudo prompt may appear)...\n"
+        if sudo systemctl stop ollama; then
+            stopped=true
+        fi
+    fi
+
+    # Catch foreground `ollama serve` instances too.
+    if pgrep -x ollama >/dev/null 2>&1; then
+        printf "[info] Killing foreground ollama processes...\n"
+        pkill -x ollama 2>/dev/null || true
+        stopped=true
+    fi
+
+    if ! $stopped; then
+        printf "[error] Couldn't identify how to stop Ollama. Stop it manually and re-run.\n" >&2
+        exit 1
+    fi
+
+    # Wait up to 10s for the port to actually free up.
+    local waited=0
+    while [ $waited -lt 10 ]; do
+        if ! curl -fsS "http://127.0.0.1:$port/api/tags" >/dev/null 2>&1; then
+            printf "[info] Port %s is free.\n" "$port"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    printf "[error] Port %s still bound after 10s. Check what's holding it.\n" "$port" >&2
+    exit 1
+}
+
+check_port_conflict
+
 # Ensure bind-mount targets exist so Docker doesn't create them as root-owned.
 mkdir -p "Darwin Research/Research/Incoming" papers logs
 
