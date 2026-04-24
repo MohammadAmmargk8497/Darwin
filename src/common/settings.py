@@ -84,6 +84,14 @@ class DarwinSettings(BaseSettings):
     arxiv_max_retries: int = 3
     arxiv_page_size: int = 100
 
+    # --- Ollama tuning ----------------------------------------------------
+    # qwen2.5 and most modern Ollama models default to very large context
+    # windows (32K+). The agent's conversation rarely exceeds a few thousand
+    # tokens, and the KV cache scales linearly with num_ctx, so an oversized
+    # context multiplies both VRAM use and cold-start latency. 8192 gives
+    # generous headroom for long tool results while keeping warmup fast.
+    ollama_num_ctx: int = Field(default=8192, validation_alias="OLLAMA_NUM_CTX")
+
     # --- Logging ----------------------------------------------------------
     log_level: str = Field(default="INFO", validation_alias="DARWIN_LOG_LEVEL")
 

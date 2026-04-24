@@ -88,8 +88,9 @@ async def run_agent():
             model_name=model_name,
             host=api_base,
             system_prompt=system_prompt,
+            num_ctx=settings.ollama_num_ctx,
         )
-        print(f"{GREEN}Using Ollama ({api_base}) with model: {model_name}{RESET}")
+        print(f"{GREEN}Using Ollama ({api_base}) with model: {model_name} (num_ctx={settings.ollama_num_ctx}){RESET}")
 
     else:
         print(f"{RED}Unknown provider: {provider}. Use 'ollama' or 'openai'{RESET}")

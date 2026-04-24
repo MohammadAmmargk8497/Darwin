@@ -38,6 +38,20 @@ if [ "${PROVIDER:-ollama}" = "ollama" ]; then
                 || printf "[entrypoint] Model pull returned a non-zero exit; UI will surface the error.\n"
             printf "\n[entrypoint] Model pull finished.\n"
         fi
+
+        # Fire a throwaway generation so Ollama compiles CUDA kernels, warms
+        # the KV cache allocator, and loads weights into VRAM before the
+        # user's first real query. Without this the first UI turn eats an
+        # 8-10s cold-start penalty. We cap num_ctx identically to what the
+        # agent uses so the warmup actually warms the right configuration.
+        WARMUP_CTX="${OLLAMA_NUM_CTX:-8192}"
+        printf "[entrypoint] Warming model (num_ctx=%s)...\n" "$WARMUP_CTX"
+        curl -fsS -X POST "$API/api/generate" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"$MODEL\",\"prompt\":\"hi\",\"stream\":false,\"options\":{\"num_ctx\":$WARMUP_CTX}}" \
+            >/dev/null 2>&1 \
+            && printf "[entrypoint] Warmup done — first query will be fast.\n" \
+            || printf "[entrypoint] Warmup skipped (non-fatal).\n"
     fi
 fi
 

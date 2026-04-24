@@ -19,7 +19,13 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     environment:
-      OLLAMA_KEEP_ALIVE: "1h"
+      # Keep the model resident between turns so we don't pay the cold-load
+      # cost after short idle pauses — a research agent workflow has lots of
+      # those while the user reads tool results.
+      OLLAMA_KEEP_ALIVE: "24h"
+      # Flash attention shaves roughly 1.5-2x off the attention path on
+      # modern models (Llama 3.x, Qwen 2.5). Free speedup, no quality cost.
+      OLLAMA_FLASH_ATTENTION: "1"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -48,6 +54,9 @@ services:
       PROVIDER: "${PROVIDER:-ollama}"
       MODEL_NAME: "${MODEL_NAME:-llama3.2:3b}"
       API_BASE: "http://ollama:11434"
+      # Capping num_ctx is the single biggest knob for Ollama cold-start
+      # latency. Override via OLLAMA_NUM_CTX if you need more headroom.
+      OLLAMA_NUM_CTX: "${OLLAMA_NUM_CTX:-8192}"
       # These are forwarded from a host-level .env if the user created one.
       # Empty by default — Darwin doesn't need them unless the vault is
       # driven by the Obsidian Local REST API plugin.

@@ -162,6 +162,7 @@ async def main():
             model_name=model_name,
             host=api_base,
             system_prompt=system_prompt,
+            num_ctx=settings.ollama_num_ctx,
         )
 
     # Keep a plain dict around too so the rest of this function (which was
